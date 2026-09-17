@@ -234,37 +234,38 @@ const PhysicalRoomsPage: React.FC = () => {
 
     return (
         <MainLayout>
-            <div className="min-h-screen bg-white dark:bg-[#0b0e14] text-slate-600 dark:text-slate-300 font-sans p-6 select-none transition-colors duration-300">
+            <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] text-gray-600 dark:text-gray-300 font-sans p-6 select-none transition-colors duration-300">
                 
-                {/* Header - Precise Replica */}
-                <div className="flex items-center gap-4 mb-10">
-                    <BackButton to="/academic/hub/settings" className="ml-10" />
-                    <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 bg-indigo-600/20 border border-indigo-500/30 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/10">
-                            <LayoutGrid size={28} className="text-indigo-400" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-black text-gray-900 dark:text-white tracking-tight leading-tight">ข้อมูลอาคารและสถานที่สอน</h1>
-                            <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em] mt-1">BMG — TOTAL PHYSICAL MANAGEMENT</p>
+                {/* Header */}
+                <header className="mb-10">
+                    <div className="flex items-center gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f]">
+                        <BackButton to="/academic/hub/settings" />
+                        <div className="flex items-center gap-4 min-w-0">
+                            <div className="w-14 h-14 bg-indigo-600/20 border border-indigo-500/30 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/10 shrink-0">
+                                <LayoutGrid size={28} className="text-indigo-400" />
+                            </div>
+                            <div className="min-w-0">
+                                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white">ข้อมูลอาคารและสถานที่สอน</h1>
+                            </div>
                         </div>
                     </div>
-                </div>
+                </header>
 
                 <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 max-w-[1600px] mx-auto">
                     
                     {/* Left Column: Form */}
-                    <div className="xl:col-span-5 bg-gray-50 dark:bg-[#161a27] rounded-[2.5rem] border border-gray-200 dark:border-white/5 p-8 shadow-2xl flex flex-col gap-8 transition-colors duration-300">
+                    <div className="xl:col-span-5 bg-gray-50 dark:bg-[#2a2b2f] rounded-[2.5rem] border border-gray-200 dark:border-white/5 p-8 shadow-2xl flex flex-col gap-8 transition-colors duration-300">
                         
-                        <div className="flex bg-gray-200/50 dark:bg-[#0b0e14] p-1.5 rounded-2xl border border-gray-200 dark:border-white/5">
+                        <div className="flex bg-gray-200/50 dark:bg-[#1e1f21] p-1.5 rounded-2xl border border-gray-200 dark:border-white/5">
                             <button 
                                 onClick={() => setCreationMode('bulk')}
-                                className={`flex-1 py-3 px-4 rounded-xl text-xs font-black transition-all ${creationMode === 'bulk' ? 'bg-white dark:bg-[#1e2235] text-indigo-600 dark:text-indigo-400 shadow-xl border border-gray-200 dark:border-white/5' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'}`}
+                                className={`flex-1 py-3 px-4 rounded-xl text-xs font-black transition-all ${creationMode === 'bulk' ? 'bg-white dark:bg-[#35363b] text-indigo-600 dark:text-indigo-400 shadow-xl border border-gray-200 dark:border-white/5' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}
                             >
                                 สร้างแบบกลุ่ม (UNI STYLE)
                             </button>
                             <button 
                                 onClick={() => setCreationMode('single')}
-                                className={`flex-1 py-3 px-4 rounded-xl text-xs font-black transition-all ${creationMode === 'single' ? 'bg-white dark:bg-[#1e2235] text-indigo-600 dark:text-indigo-400 shadow-xl border border-gray-200 dark:border-white/5' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'}`}
+                                className={`flex-1 py-3 px-4 rounded-xl text-xs font-black transition-all ${creationMode === 'single' ? 'bg-white dark:bg-[#35363b] text-indigo-600 dark:text-indigo-400 shadow-xl border border-gray-200 dark:border-white/5' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}
                             >
                                 เพิ่มรายห้อง
                             </button>
@@ -280,56 +281,56 @@ const PhysicalRoomsPage: React.FC = () => {
                                 <form onSubmit={handleBulkSave} className="space-y-6">
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="space-y-2">
-                                            <label className="text-[11px] font-black text-gray-500 dark:text-slate-400 uppercase tracking-widest ml-1">เลขอาคาร (หลักที่ 1)</label>
+                                            <label className="text-[11px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest ml-1">เลขอาคาร (หลักที่ 1)</label>
                                             <input 
                                                 type="text" 
                                                 placeholder="เช่น 1"
                                                 maxLength={1}
                                                 value={bulkForm.building}
                                                 onChange={(e) => setBulkForm({...bulkForm, building: e.target.value})}
-                                                className="w-full bg-white dark:bg-[#1e2235] border border-gray-200 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-bold text-gray-900 dark:text-white outline-none focus:border-sky-500/50 text-center"
+                                                className="w-full bg-white dark:bg-[#35363b] border border-gray-200 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-bold text-gray-900 dark:text-white outline-none focus:border-sky-500/50 text-center"
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-[11px] font-black text-gray-500 dark:text-slate-400 uppercase tracking-widest ml-1">เลขชั้น (หลักที่ 2)</label>
+                                            <label className="text-[11px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest ml-1">เลขชั้น (หลักที่ 2)</label>
                                             <input 
                                                 type="text" 
                                                 placeholder="เช่น 0"
                                                 maxLength={1}
                                                 value={bulkForm.floor}
                                                 onChange={(e) => setBulkForm({...bulkForm, floor: e.target.value})}
-                                                className="w-full bg-white dark:bg-[#1e2235] border border-gray-200 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-bold text-gray-900 dark:text-white outline-none focus:border-sky-500/50 text-center"
+                                                className="w-full bg-white dark:bg-[#35363b] border border-gray-200 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-bold text-gray-900 dark:text-white outline-none focus:border-sky-500/50 text-center"
                                             />
                                         </div>
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="space-y-2">
-                                            <label className="text-[11px] font-black text-gray-500 dark:text-slate-400 uppercase tracking-widest ml-1">จำนวนห้องที่จะสร้าง <span className="text-rose-500">*</span></label>
+                                            <label className="text-[11px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest ml-1">จำนวนห้องที่จะสร้าง <span className="text-rose-500">*</span></label>
                                             <input 
                                                 type="number" 
                                                 value={bulkForm.count}
                                                 onChange={(e) => setBulkForm({...bulkForm, count: Math.max(1, Number(e.target.value))})}
-                                                className="w-full bg-white dark:bg-[#1e2235] border border-gray-200 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-bold text-gray-900 dark:text-white outline-none focus:border-sky-500/50"
+                                                className="w-full bg-white dark:bg-[#35363b] border border-gray-200 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-bold text-gray-900 dark:text-white outline-none focus:border-sky-500/50"
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-[11px] font-black text-gray-500 dark:text-slate-400 uppercase tracking-widest ml-1">ความจุต่อห้อง (ที่นั่ง)</label>
+                                            <label className="text-[11px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest ml-1">ความจุต่อห้อง (ที่นั่ง)</label>
                                             <input 
                                                 type="number" 
                                                 value={bulkForm.capacity}
                                                 onChange={(e) => setBulkForm({...bulkForm, capacity: Number(e.target.value)})}
-                                                className="w-full bg-white dark:bg-[#1e2235] border border-gray-200 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-bold text-gray-900 dark:text-white outline-none focus:border-sky-500/50"
+                                                className="w-full bg-white dark:bg-[#35363b] border border-gray-200 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-bold text-gray-900 dark:text-white outline-none focus:border-sky-500/50"
                                             />
                                         </div>
                                     </div>
 
                                     <div className="space-y-2">
-                                        <label className="text-[11px] font-black text-gray-500 dark:text-slate-400 uppercase tracking-widest ml-1">คุณลักษณะห้อง</label>
+                                        <label className="text-[11px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest ml-1">คุณลักษณะห้อง</label>
                                         <select 
                                             value={bulkForm.roomType}
                                             onChange={(e) => setBulkForm({...bulkForm, roomType: e.target.value})}
-                                            className="w-full bg-white dark:bg-[#1e2235] border border-gray-200 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-bold text-gray-900 dark:text-white outline-none focus:border-sky-500/50 appearance-none cursor-pointer"
+                                            className="w-full bg-white dark:bg-[#35363b] border border-gray-200 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-bold text-gray-900 dark:text-white outline-none focus:border-sky-500/50 appearance-none cursor-pointer"
                                         >
                                             <option>ห้องเรียนปกติ (Theory)</option>
                                             <option>ห้องแล็บ (Science Lab)</option>
@@ -346,18 +347,18 @@ const PhysicalRoomsPage: React.FC = () => {
                                             <div className="px-2 py-1 bg-sky-500 text-[9px] text-white font-black rounded-lg">SMART SYNC</div>
                                         </div>
                                         <div className="flex items-center gap-4">
-                                            <div className="flex-1 text-center p-3 bg-white dark:bg-[#0b0e14]/50 rounded-xl border border-gray-200 dark:border-white/5">
-                                                <div className="text-[10px] text-gray-500 dark:text-slate-400 font-bold mb-1">รหัสเริ่มต้น</div>
+                                            <div className="flex-1 text-center p-3 bg-white dark:bg-[#1e1f21]/50 rounded-xl border border-gray-200 dark:border-white/5">
+                                                <div className="text-[10px] text-gray-500 dark:text-gray-400 font-bold mb-1">รหัสเริ่มต้น</div>
                                                 <div className="text-xl font-black text-gray-900 dark:text-white">{bulkForm.building || '?'}{bulkForm.floor || '?'}1</div>
                                             </div>
                                             <div className="text-sky-500 font-black">→</div>
-                                            <div className="flex-1 text-center p-3 bg-white dark:bg-[#0b0e14]/50 rounded-xl border border-gray-200 dark:border-white/5">
-                                                <div className="text-[10px] text-gray-500 dark:text-slate-400 font-bold mb-1">รหัสสุดท้าย</div>
+                                            <div className="flex-1 text-center p-3 bg-white dark:bg-[#1e1f21]/50 rounded-xl border border-gray-200 dark:border-white/5">
+                                                <div className="text-[10px] text-gray-500 dark:text-gray-400 font-bold mb-1">รหัสสุดท้าย</div>
                                                 <div className="text-xl font-black text-gray-900 dark:text-white">{bulkForm.building || '?'}{bulkForm.floor || '?'}{bulkForm.count}</div>
                                             </div>
                                         </div>
                                         <div className="pt-2 border-t border-sky-500/10">
-                                            <p className="text-[11px] font-bold text-slate-400 text-center italic">
+                                            <p className="text-[11px] font-bold text-gray-400 text-center italic">
                                                 "สร้างอาคาร {bulkForm.building || '...'} ชั้น {bulkForm.floor || '...'} จำนวน {bulkForm.count} ห้อง"
                                             </p>
                                         </div>
@@ -382,23 +383,23 @@ const PhysicalRoomsPage: React.FC = () => {
                                 <form onSubmit={handleSave} className="space-y-6">
                                     <div className="grid grid-cols-3 gap-4">
                                         <div className="col-span-1 space-y-2">
-                                            <label className="text-[11px] font-black text-gray-500 dark:text-slate-400 uppercase tracking-widest ml-1">รหัสห้อง <span className="text-rose-500">*</span></label>
+                                            <label className="text-[11px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest ml-1">รหัสห้อง <span className="text-rose-500">*</span></label>
                                             <input 
                                                 type="text" 
                                                 placeholder="เช่น 101"
                                                 maxLength={4}
                                                 value={form.roomCode}
                                                 onChange={(e) => setForm({...form, roomCode: e.target.value})}
-                                                className="w-full bg-white dark:bg-[#1e2235] border border-gray-200 dark:border-white/5 rounded-2xl px-5 py-4 text-base font-black text-sky-600 dark:text-sky-400 outline-none focus:border-indigo-500/50 text-center"
+                                                className="w-full bg-white dark:bg-[#35363b] border border-gray-200 dark:border-white/5 rounded-2xl px-5 py-4 text-base font-black text-sky-600 dark:text-sky-400 outline-none focus:border-indigo-500/50 text-center"
                                             />
                                         </div>
                                         <div className="col-span-2 space-y-2">
-                                            <label className="text-[11px] font-black text-gray-500 dark:text-slate-400 uppercase tracking-widest ml-1">คุณลักษณะห้อง</label>
+                                            <label className="text-[11px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest ml-1">คุณลักษณะห้อง</label>
                                             <div className="relative">
                                                 <select 
                                                     value={form.roomType}
                                                     onChange={(e) => setForm({...form, roomType: e.target.value})}
-                                                    className="w-full bg-white dark:bg-[#1e2235] border border-gray-200 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-bold text-gray-900 dark:text-white outline-none focus:border-indigo-500/50 appearance-none cursor-pointer"
+                                                    className="w-full bg-white dark:bg-[#35363b] border border-gray-200 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-bold text-gray-900 dark:text-white outline-none focus:border-indigo-500/50 appearance-none cursor-pointer"
                                                 >
                                                     <option>ห้องเรียนปกติ (Theory)</option>
                                                     <option>ห้องแล็บ (Science Lab)</option>
@@ -432,22 +433,22 @@ const PhysicalRoomsPage: React.FC = () => {
                                                 <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
                                             </div>
                                             <div className="grid grid-cols-3 gap-2">
-                                                <div className="text-center p-2 bg-white/50 dark:bg-[#0b0e14]/50 rounded-xl">
-                                                    <div className="text-[9px] text-gray-500 dark:text-slate-400 font-bold uppercase">อาคาร</div>
+                                                <div className="text-center p-2 bg-white/50 dark:bg-[#1e1f21]/50 rounded-xl">
+                                                    <div className="text-[9px] text-gray-500 dark:text-gray-400 font-bold uppercase">อาคาร</div>
                                                     <div className="text-lg font-black text-gray-900 dark:text-white">{parseRoomCode(form.roomCode).b}</div>
                                                 </div>
-                                                <div className="text-center p-2 bg-white/50 dark:bg-[#0b0e14]/50 rounded-xl">
-                                                    <div className="text-[9px] text-gray-500 dark:text-slate-400 font-bold uppercase">ชั้น</div>
+                                                <div className="text-center p-2 bg-white/50 dark:bg-[#1e1f21]/50 rounded-xl">
+                                                    <div className="text-[9px] text-gray-500 dark:text-gray-400 font-bold uppercase">ชั้น</div>
                                                     <div className="text-lg font-black text-gray-900 dark:text-white">{parseRoomCode(form.roomCode).f}</div>
                                                 </div>
-                                                <div className="text-center p-2 bg-white/50 dark:bg-[#0b0e14]/50 rounded-xl">
-                                                    <div className="text-[9px] text-gray-500 dark:text-slate-400 font-bold uppercase">เลขห้อง</div>
+                                                <div className="text-center p-2 bg-white/50 dark:bg-[#1e1f21]/50 rounded-xl">
+                                                    <div className="text-[9px] text-gray-500 dark:text-gray-400 font-bold uppercase">เลขห้อง</div>
                                                     <div className="text-lg font-black text-gray-900 dark:text-white">{parseRoomCode(form.roomCode).r}</div>
                                                 </div>
                                             </div>
                                             <div className="pt-2 border-t border-indigo-500/10 flex items-center gap-3">
                                                 <Check size={14} className="text-emerald-500" />
-                                                <p className="text-xs font-black text-gray-600 dark:text-slate-300">
+                                                <p className="text-xs font-black text-gray-600 dark:text-gray-300">
                                                     {form.roomCode} อาคาร {parseRoomCode(form.roomCode).b} ชั้น {parseRoomCode(form.roomCode).f} ห้อง {parseRoomCode(form.roomCode).r}
                                                 </p>
                                             </div>
@@ -456,8 +457,8 @@ const PhysicalRoomsPage: React.FC = () => {
 
                                     <div className="space-y-4">
                                         <div className="flex items-center justify-between px-1">
-                                            <label className="text-[11px] font-black text-gray-500 dark:text-slate-400 uppercase tracking-widest">ข้อมูลเพิ่มเติม (OPTIONAL)</label>
-                                            <span className="text-[10px] text-gray-500 dark:text-slate-400 font-bold">เว้นว่างไว้เพื่อใช้ค่าอัตโนมัติ</span>
+                                            <label className="text-[11px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest">ข้อมูลเพิ่มเติม (OPTIONAL)</label>
+                                            <span className="text-[10px] text-gray-500 dark:text-gray-400 font-bold">เว้นว่างไว้เพื่อใช้ค่าอัตโนมัติ</span>
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
                                             <input 
@@ -465,10 +466,10 @@ const PhysicalRoomsPage: React.FC = () => {
                                                 placeholder="ชื่อเรียกอื่นๆ"
                                                 value={form.roomName}
                                                 onChange={(e) => setForm({...form, roomName: e.target.value})}
-                                                className="w-full bg-white dark:bg-[#1e2235]/50 border border-gray-200 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-bold text-gray-900 dark:text-white outline-none focus:border-indigo-500/50"
+                                                className="w-full bg-white dark:bg-[#35363b]/50 border border-gray-200 dark:border-white/5 rounded-2xl px-5 py-4 text-sm font-bold text-gray-900 dark:text-white outline-none focus:border-indigo-500/50"
                                             />
-                                            <div className="flex items-center gap-3 bg-white dark:bg-[#1e2235]/50 border border-gray-200 dark:border-white/5 rounded-2xl px-4">
-                                                <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase">ความจุ</span>
+                                            <div className="flex items-center gap-3 bg-white dark:bg-[#35363b]/50 border border-gray-200 dark:border-white/5 rounded-2xl px-4">
+                                                <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase">ความจุ</span>
                                                 <input 
                                                     type="number" 
                                                     value={form.capacity}
@@ -492,27 +493,27 @@ const PhysicalRoomsPage: React.FC = () => {
                     </div>
 
                     {/* Right Column: Room List */}
-                    <div className="xl:col-span-7 bg-white dark:bg-[#0b0e14] rounded-[2.5rem] flex flex-col gap-6 transition-colors duration-300">
+                    <div className="xl:col-span-7 bg-white dark:bg-[#1e1f21] rounded-[2.5rem] flex flex-col gap-6 transition-colors duration-300">
                         
                         <div className="flex items-center justify-between px-4">
-                            <h3 className="text-xl font-black text-gray-900 dark:text-white">รายการสถานที่ทั้งหมด <span className="text-slate-400 dark:text-slate-600 ml-2">({filteredRooms.length})</span></h3>
+                            <h3 className="text-xl font-black text-gray-900 dark:text-white">รายการสถานที่ทั้งหมด <span className="text-gray-400 dark:text-gray-600 ml-2">({filteredRooms.length})</span></h3>
                             <div className="relative w-64">
-                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
                                 <input 
                                     type="text" 
                                     placeholder="ค้นหาจุดการสอน..."
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="w-full pl-12 pr-4 py-3 bg-gray-50 dark:bg-[#161a27] border border-gray-200 dark:border-white/5 rounded-xl text-sm font-bold outline-none text-gray-900 dark:text-white focus:border-indigo-500/50"
+                                    className="w-full pl-12 pr-4 py-3 bg-gray-50 dark:bg-[#2a2b2f] border border-gray-200 dark:border-white/5 rounded-xl text-sm font-bold outline-none text-gray-900 dark:text-white focus:border-indigo-500/50"
                                 />
                             </div>
                         </div>
 
                         <div className="space-y-3 overflow-y-auto custom-scrollbar max-h-[800px] pr-2">
                             {filteredRooms.map(room => (
-                                <div key={room.id} className="bg-gray-50 dark:bg-[#161a27] p-4 rounded-[1.5rem] border border-gray-200 dark:border-white/5 flex items-center justify-between group transition-all hover:bg-white dark:hover:bg-[#1c2133] hover:border-indigo-500/30 shadow-sm hover:shadow-xl">
+                                <div key={room.id} className="bg-gray-50 dark:bg-[#2a2b2f] p-4 rounded-[1.5rem] border border-gray-200 dark:border-white/5 flex items-center justify-between group transition-all hover:bg-white dark:hover:bg-[#35363b] hover:border-indigo-500/30 shadow-sm hover:shadow-xl">
                                     <div className="flex items-center gap-5">
-                                        <div className="w-12 h-12 rounded-2xl bg-white dark:bg-[#0b0e14] border border-gray-100 dark:border-white/5 flex items-center justify-center shadow-inner shrink-0">
+                                        <div className="w-12 h-12 rounded-2xl bg-white dark:bg-[#1e1f21] border border-gray-100 dark:border-white/5 flex items-center justify-center shadow-inner shrink-0">
                                             {(room.roomType || '').includes('IT') || (room.roomType || '').includes('COMPUTER') || (room.roomType || '').includes('คอม') ? <Monitor size={20} className="text-indigo-400" /> : <Building size={20} className="text-indigo-400" />}
                                         </div>
                                         <div className="flex flex-col gap-1">
@@ -524,8 +525,8 @@ const PhysicalRoomsPage: React.FC = () => {
                                                     <LayoutGrid size={12} />
                                                     <span>{room.roomType}</span>
                                                 </div>
-                                                <div className="flex items-center gap-1.5 text-gray-500 dark:text-slate-400/80">
-                                                    <Users size={12} className="text-gray-400 dark:text-slate-500" />
+                                                <div className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400/80">
+                                                    <Users size={12} className="text-gray-400 dark:text-gray-500" />
                                                     <span>ความจุ: {room.capacity || 0} ที่นั่ง</span>
                                                 </div>
                                             </div>
@@ -533,10 +534,10 @@ const PhysicalRoomsPage: React.FC = () => {
                                     </div>
                                     <div className="flex items-center gap-5">
                                         <div className="flex items-center gap-2.5">
-                                            <span className={`text-[10px] font-black uppercase tracking-widest ${room.isActive ? 'text-emerald-500' : 'text-slate-600'}`}>เปิดใช้</span>
+                                            <span className={`text-[10px] font-black uppercase tracking-widest ${room.isActive ? 'text-emerald-500' : 'text-gray-600'}`}>เปิดใช้</span>
                                             <button 
                                                 onClick={() => toggleStatus(room.id, room.isActive)}
-                                                className={`w-12 h-6 rounded-full relative transition-all duration-300 ${room.isActive ? 'bg-emerald-500 shadow-lg shadow-emerald-500/20' : 'bg-gray-200 dark:bg-[#1e2235]'}`}
+                                                className={`w-12 h-6 rounded-full relative transition-all duration-300 ${room.isActive ? 'bg-emerald-500 shadow-lg shadow-emerald-500/20' : 'bg-gray-200 dark:bg-[#35363b]'}`}
                                             >
                                                 <div className="absolute top-0.5 w-5 h-5 bg-white rounded-full transition-all duration-300 shadow-md" style={{ left: room.isActive ? '26px' : '2px' }} />
                                             </button>
@@ -552,7 +553,7 @@ const PhysicalRoomsPage: React.FC = () => {
                                 </div>
                             ))}
                             {filteredRooms.length === 0 && (
-                                <div className="flex flex-col items-center justify-center py-40 text-gray-400 dark:text-slate-500">
+                                <div className="flex flex-col items-center justify-center py-40 text-gray-400 dark:text-gray-500">
                                     <Building2 size={64} strokeWidth={1} className="opacity-40" />
                                     <p className="text-sm font-black uppercase tracking-widest mt-6 opacity-60">ไม่พบข้อมูลสถานที่สอน</p>
                                 </div>

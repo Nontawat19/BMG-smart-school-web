@@ -827,15 +827,17 @@ const ClubReportsPage: React.FC = () => {
   if (!currentReport && !reportType) {
     return (
       <MainLayout>
-        <div className="min-h-screen bg-gray-50 px-3 py-4 dark:bg-[#1c1c24] sm:px-4 md:px-6 lg:px-8 lg:py-8">
+        <div className="min-h-screen bg-gray-50 px-3 py-4 dark:bg-[#1e1f21] sm:px-4 md:px-6 lg:px-8 lg:py-8">
           <div className="mx-auto max-w-6xl">
-            <div className="mb-8 flex items-center gap-4">
-              <BackButton to="/academic/hub/activities" />
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white sm:text-3xl">รายงานชุมนุม</h1>
-                <p className="mt-1 text-sm font-medium text-gray-500 dark:text-gray-400">เลือกดูรายงานกิจกรรมและชุมนุมตามประเภท</p>
+            <header className="mb-8">
+              <div className="flex items-center gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f]">
+                <BackButton to="/academic/hub/activities" />
+                <div className="min-w-0">
+                  <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white">รายงานชุมนุม</h1>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">เลือกดูรายงานกิจกรรมและชุมนุมตามประเภท</p>
+                </div>
               </div>
-            </div>
+            </header>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {reportMenus.map((report) => (
                 <Link
@@ -875,7 +877,7 @@ const ClubReportsPage: React.FC = () => {
         .report-input:focus { border-color: #2f86d1; box-shadow: 0 0 0 2px rgba(47, 134, 209, 0.12); }
         .report-input:disabled { background: #f1f5f9; color: #1e293b; cursor: not-allowed; font-weight: 600; border-color: #e2e8f0; }
         
-        .dark .report-input { background: #1c1c24; border-color: rgba(255, 255, 255, 0.1); color: #f8fafc; }
+        .dark .report-input { background: #1e1f21; border-color: rgba(255, 255, 255, 0.1); color: #f8fafc; }
         .dark .report-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); }
         .dark .report-input:disabled { background: rgba(255, 255, 255, 0.05); color: #ffffff; cursor: not-allowed; font-weight: 600; border-color: rgba(255, 255, 255, 0.1); }
 
@@ -886,15 +888,17 @@ const ClubReportsPage: React.FC = () => {
           .report-table th, .report-table td { font-size: 11px; padding: 5px 6px; }
         }
       `}</style>
-      <div className="min-h-screen bg-gray-50 px-3 py-4 dark:bg-[#1c1c24] sm:px-4 md:px-6 lg:px-8 lg:py-8">
+      <div className="min-h-screen bg-gray-50 px-3 py-4 dark:bg-[#1e1f21] sm:px-4 md:px-6 lg:px-8 lg:py-8">
         <div className="mx-auto max-w-[1500px]">
-          <div className="mb-4 flex items-center gap-4 print:hidden">
-            <BackButton to="/academic/club-reports" />
-            <div className="min-w-0 flex-1">
-              <h1 className="truncate text-2xl font-bold text-gray-900 dark:text-white">{currentReport?.title || "รายงานชุมนุม"}</h1>
-              <p className="text-sm text-gray-500 dark:text-gray-400">{currentReport?.description}</p>
+          <header className="mb-4 print:hidden">
+            <div className="flex items-center gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f]">
+              <BackButton to="/academic/club-reports" />
+              <div className="min-w-0 flex-1">
+                <h1 className="truncate text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white">{currentReport?.title || "รายงานชุมนุม"}</h1>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{currentReport?.description}</p>
+              </div>
             </div>
-          </div>
+          </header>
 
           <div id="club-report-print" className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#2a2b2f]">
             <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-white/10">

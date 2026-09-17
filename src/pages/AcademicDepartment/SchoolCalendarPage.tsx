@@ -152,7 +152,7 @@ const ThaiDatePicker: React.FC<{
       </div>
 
       {isOpen && (
-        <div className="absolute z-50 mt-1 w-72 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 p-4 left-0 sm:left-auto sm:right-0 md:left-0">
+        <div className="absolute z-50 mt-1 w-72 bg-white dark:bg-[#2a2b2f] rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 p-4 left-0 sm:left-auto sm:right-0 md:left-0">
           <div className="flex justify-between items-center mb-4">
             <button onClick={() => changeMonth(-1)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-300">&lt;</button>
             <span className="font-bold text-gray-900 dark:text-white">
@@ -641,7 +641,7 @@ const SchoolCalendarPage: React.FC = () => {
               ].map(opt => `
                       <div class="relative">
                         <input type="radio" name="scheduleDay" id="day-${opt.val || 'normal'}" value="${opt.val}" class="peer hidden" ${opt.val === (isWeekend ? 'mon' : '') ? 'checked' : ''}>
-                        <label for="day-${opt.val || 'normal'}" class="block cursor-pointer rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 p-2 text-center text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 peer-checked:border-indigo-600 peer-checked:bg-indigo-600 peer-checked:text-white transition-all">
+                        <label for="day-${opt.val || 'normal'}" class="block cursor-pointer rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-[#2a2b2f] p-2 text-center text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 peer-checked:border-indigo-600 peer-checked:bg-indigo-600 peer-checked:text-white transition-all">
                           ${opt.label}
                         </label>
                       </div>
@@ -853,7 +853,7 @@ const SchoolCalendarPage: React.FC = () => {
         <span>⚠</span>
         <span>วันหยุดราชการผิดปกติ {monthAnomalies.length} วัน</span>
       </div>
-      <div className="hidden group-hover:block absolute right-0 mt-1 z-50 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 text-xs text-gray-700 dark:text-gray-200">
+      <div className="hidden group-hover:block absolute right-0 mt-1 z-50 w-64 bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 text-xs text-gray-700 dark:text-gray-200">
         <p className="font-semibold mb-1">วันหยุดราชการที่ไม่ได้ถูกทำเครื่องหมายเป็นวันหยุดในปฏิทินนี้:</p>
         <ul className="space-y-1">
           {monthAnomalies.map(a => (
@@ -868,16 +868,18 @@ const SchoolCalendarPage: React.FC = () => {
     <MainLayout>
       <div className="px-3 py-3 sm:px-4 sm:py-4 lg:px-4 text-gray-900 dark:text-white transition-colors duration-300 overflow-x-hidden lg:h-[calc(100vh-60px)] lg:overflow-hidden">
         <div className="max-w-[1600px] mx-auto lg:h-full flex flex-col min-h-0">
-          <div className="flex items-center gap-4 mb-3 sm:mb-4 shrink-0">
-            <BackButton to="/academic/hub/settings" />
-            <div className="min-w-0">
-              <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <Calendar className="text-indigo-600 dark:text-indigo-400" size={28} />
-                ปฏิทินการศึกษา
-              </h1>
-              <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm">จัดการกำหนดการและวันหยุดของสถานศึกษา</p>
+          <header className="mb-3 sm:mb-4 shrink-0">
+            <div className="flex items-center gap-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f]">
+              <BackButton to="/academic/hub/settings" />
+              <div className="min-w-0">
+                <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-2">
+                  <Calendar className="text-indigo-600 dark:text-indigo-400" size={28} />
+                  ปฏิทินการศึกษา
+                </h1>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">จัดการกำหนดการและวันหยุดของสถานศึกษา</p>
+              </div>
             </div>
-          </div>
+          </header>
 
           <div ref={desktopViewportRef} className="hidden lg:flex lg:flex-1 lg:min-h-0 lg:items-start lg:justify-center lg:overflow-hidden">
             <div

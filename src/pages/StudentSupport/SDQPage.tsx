@@ -41,12 +41,12 @@ const SDQPage: React.FC = () => {
 
     return (
         <MainLayout>
-            <div className="p-4 sm:p-8 bg-gray-50 dark:bg-gray-900 min-h-screen transition-colors duration-300">
+            <div className="p-4 sm:p-8 bg-gray-50 dark:bg-[#1e1f21] min-h-screen transition-colors duration-300">
                 <div className="max-w-7xl mx-auto">
                     {/* Header */}
                     <div className="mb-8">
                         <div className="flex items-center gap-4 mb-2">
-                            <BackButton />
+                            <BackButton to="/student-support" />
                             <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
                                 <ClipboardList className="text-indigo-600" size={36} />
                                 ระบบคัดกรองนักเรียน (SDQ)
@@ -62,7 +62,7 @@ const SDQPage: React.FC = () => {
                             <Link
                                 key={index}
                                 to={item.path}
-                                className="group relative bg-white dark:bg-gray-800 rounded-2xl p-8 shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border border-gray-100 dark:border-gray-700 flex flex-col h-full"
+                                className="group relative bg-white dark:bg-[#2a2b2f] rounded-2xl p-8 shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col h-full border-none outline-none ring-0 hover:no-underline transform-gpu"
                             >
                                 <div className={`w-16 h-16 rounded-2xl ${item.colorClass} flex items-center justify-center mb-6 transition-transform group-hover:scale-110 shadow-sm`}>
                                     {item.icon}

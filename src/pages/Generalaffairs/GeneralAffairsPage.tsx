@@ -872,18 +872,18 @@ const GeneralAffairsPage: React.FC = () => {
     <GeneralAffairsLayout>
       <div className="min-h-screen bg-gray-50/50 dark:bg-[#1e1f21] transition-colors duration-300 font-sans">
         {/* ── STICKY HEADER ── */}
-        <div className="sticky top-0 z-30 bg-white/95 dark:bg-[#111318]/95 backdrop-blur border-b border-slate-200 dark:border-white/5 px-4 py-3 flex items-center justify-between gap-4 shadow-sm">
+        <div className="sticky top-0 z-30 bg-white/95 dark:bg-[#2a2b2f]/95 backdrop-blur border-b border-gray-200 dark:border-white/5 px-4 py-3 flex items-center justify-between gap-4 shadow-sm">
           <div className="flex items-center gap-3 min-w-0">
             <BackButton to="/general-affairs/home" />
-            <div className="h-5 w-px bg-slate-200 dark:bg-white/10" />
+            <div className="h-5 w-px bg-gray-200 dark:bg-white/10" />
             <div className="min-w-0">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">งานธุรการ · e-Saraban</p>
-              <h1 className="text-sm font-black text-slate-800 dark:text-white truncate">ลงรับเอกสาร / ประทับตรา</h1>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">งานธุรการ · e-Saraban</p>
+              <h1 className="text-sm font-black text-gray-800 dark:text-white truncate">ลงรับเอกสาร / ประทับตรา</h1>
             </div>
           </div>
-          <div className="hidden sm:flex items-center gap-2 shrink-0 text-xs text-slate-500 dark:text-slate-400">
+          <div className="hidden sm:flex items-center gap-2 shrink-0 text-xs text-gray-500 dark:text-gray-400">
             <FaCalendarAlt size={14} />
-            <span className="font-bold text-slate-800 dark:text-white">{currentDateTime.time}</span>
+            <span className="font-bold text-gray-800 dark:text-white">{currentDateTime.time}</span>
             <span>{currentDateTime.date}</span>
           </div>
         </div>
@@ -1190,7 +1190,7 @@ const GeneralAffairsPage: React.FC = () => {
                           className={`w-full font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm ${
                             stampedImages.length > 0
                               ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200 dark:shadow-none' 
-                              : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600'
+                              : 'bg-gray-100 text-gray-400 dark:bg-[#2a2b2f] dark:text-gray-600'
                           }`}
                         >
                           <FaSave className="text-lg" />

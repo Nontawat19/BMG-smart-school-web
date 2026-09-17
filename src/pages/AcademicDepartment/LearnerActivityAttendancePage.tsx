@@ -555,31 +555,35 @@ const LearnerActivityAttendancePage: React.FC = () => {
     <MainLayout>
       <div className="min-h-screen p-4 sm:p-6 text-gray-900 dark:text-white">
         <div className="mx-auto max-w-7xl">
-          <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <BackButton to="/academic/hub/attendance" className="mb-3" />
-              <h1 className="flex items-center gap-3 text-2xl sm:text-3xl font-black">
-                <ClipboardCheck className="text-teal-500" size={32} />
-                เช็คชื่อกิจกรรมพัฒนาผู้เรียน
-              </h1>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                เช็คชื่อตามคาบกิจกรรมที่กำหนดในหน้าคาบเรียนพิเศษ
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white p-2 shadow-sm dark:border-gray-700 dark:bg-[#2a2b2f]">
-              <button onClick={() => setCurrentDate(shiftDate(currentDate, -1))} className="inline-flex h-10 w-10 items-center justify-center rounded-xl hover:bg-gray-100 dark:hover:bg-white/5">
-                <ChevronLeft size={20} />
-              </button>
-              <div className="flex min-w-0 items-center gap-2 px-2 text-sm font-bold">
-                <Calendar size={18} className="text-gray-500" />
-                <span className="truncate">{currentDate.toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
+          <header className="mb-6">
+            <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 flex-1 items-center gap-4">
+                <BackButton to="/academic/hub/attendance" />
+                <div className="min-w-0">
+                  <h1 className="flex items-center gap-3 text-2xl sm:text-3xl font-bold tracking-tight">
+                    <ClipboardCheck className="text-teal-500" size={28} />
+                    เช็คชื่อกิจกรรมพัฒนาผู้เรียน
+                  </h1>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    เช็คชื่อตามคาบกิจกรรมที่กำหนดในหน้าคาบเรียนพิเศษ
+                  </p>
+                </div>
               </div>
-              <button onClick={() => setCurrentDate(shiftDate(currentDate, 1))} className="inline-flex h-10 w-10 rotate-180 items-center justify-center rounded-xl hover:bg-gray-100 dark:hover:bg-white/5">
-                <ChevronLeft size={20} />
-              </button>
+
+              <div className="flex shrink-0 items-center gap-2 rounded-2xl border border-gray-200 bg-gray-50 p-2 dark:border-gray-700 dark:bg-[#1e1f21]">
+                <button onClick={() => setCurrentDate(shiftDate(currentDate, -1))} className="inline-flex h-10 w-10 items-center justify-center rounded-xl hover:bg-gray-100 dark:hover:bg-white/5">
+                  <ChevronLeft size={20} />
+                </button>
+                <div className="flex min-w-0 items-center gap-2 px-2 text-sm font-bold">
+                  <Calendar size={18} className="text-gray-500" />
+                  <span className="truncate">{currentDate.toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                </div>
+                <button onClick={() => setCurrentDate(shiftDate(currentDate, 1))} className="inline-flex h-10 w-10 rotate-180 items-center justify-center rounded-xl hover:bg-gray-100 dark:hover:bg-white/5">
+                  <ChevronLeft size={20} />
+                </button>
+              </div>
             </div>
-          </div>
+          </header>
 
           {loading ? (
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">

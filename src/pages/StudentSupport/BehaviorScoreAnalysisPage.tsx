@@ -421,30 +421,31 @@ const BehaviorScoreAnalysisPage: React.FC = () => {
 
   return (
     <MainLayout>
-      <div className="min-h-screen bg-slate-50 px-3 py-5 text-slate-900 transition-colors dark:bg-[#1c1c24] dark:text-slate-100 sm:px-5 lg:px-8">
+      <div className="min-h-screen bg-gray-50 px-3 py-5 text-gray-900 transition-colors dark:bg-[#1e1f21] dark:text-gray-100 sm:px-5 lg:px-8">
         <div className="mx-auto max-w-7xl">
-          <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <BackButton to="/student-support/hub" />
-              <div>
-                <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">Behavior score analysis</p>
-                <h1 className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white">วิเคราะห์คะแนนความประพฤติ</h1>
+          <header className="mb-5">
+            <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 flex-1 items-center gap-4">
+                <BackButton to="/student-support/hub" />
+                <div className="min-w-0">
+                  <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-950 dark:text-white">วิเคราะห์คะแนนความประพฤติ</h1>
+                </div>
               </div>
+
+              <button
+                onClick={openPdfPreview}
+                disabled={displayRows.length === 0}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Printer size={16} />
+                พิมพ์รายการ
+              </button>
             </div>
+          </header>
 
-            <button
-              onClick={openPdfPreview}
-              disabled={displayRows.length === 0}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <Printer size={16} />
-              Print รายการ
-            </button>
-          </div>
-
-          <section className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#2a2b2f]">
-            <div className="border-b border-slate-200 px-5 py-4 dark:border-white/10">
-              <div className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+          <section className="rounded-xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#2a2b2f]">
+            <div className="border-b border-gray-200 px-5 py-4 dark:border-white/10">
+              <div className="flex items-center gap-2 text-sm font-bold text-gray-700 dark:text-gray-200">
                 <Users size={18} className="text-indigo-500" />
                 ตัวกรองรายการ
               </div>
@@ -452,33 +453,33 @@ const BehaviorScoreAnalysisPage: React.FC = () => {
 
             <div className="grid gap-4 p-5 md:grid-cols-2">
               <div>
-                <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">โรงเรียน</label>
+                <label className="mb-1.5 block text-xs font-bold text-gray-600 dark:text-gray-300">โรงเรียน</label>
                 <input
                   value={schoolName || schoolId || "-"}
                   disabled
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                  className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">ปีการศึกษา</label>
+                <label className="mb-1.5 block text-xs font-bold text-gray-600 dark:text-gray-300">ปีการศึกษา</label>
                 <input
                   value={academicYear}
                   onChange={(event) => setAcademicYear(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
                 />
               </div>
             </div>
 
-            <div className="grid gap-4 border-t border-slate-200 p-5 dark:border-white/10 md:grid-cols-2 xl:grid-cols-6">
+            <div className="grid gap-4 border-t border-gray-200 p-5 dark:border-white/10 md:grid-cols-2 xl:grid-cols-6">
               <div>
-                <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">รายการช่วงชั้นเรียน</label>
+                <label className="mb-1.5 block text-xs font-bold text-gray-600 dark:text-gray-300">รายการช่วงชั้นเรียน</label>
                 <div className="relative" ref={levelDropdownRef}>
                   <button
                     type="button"
                     onClick={() => setIsLevelDropdownOpen((prev) => !prev)}
-                    className="flex w-full items-center justify-between rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-left text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
+                    className="flex w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-left text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
                   >
-                    <span className={`truncate ${selectedLevels.length === 0 ? "text-slate-400 dark:text-slate-500" : ""}`}>
+                    <span className={`truncate ${selectedLevels.length === 0 ? "text-gray-400 dark:text-gray-500" : ""}`}>
                       {selectedLevels.length === 0
                         ? "-- กรุณาเลือกระดับชั้น --"
                         : selectedLevels.length === classLevelOptions.length
@@ -488,13 +489,13 @@ const BehaviorScoreAnalysisPage: React.FC = () => {
                             .map(([key]) => CLASS_FULL_NAMES[key] || key)
                             .join(", ")}
                     </span>
-                    <ChevronDown size={16} className={`ml-2 shrink-0 text-slate-400 transition-transform ${isLevelDropdownOpen ? "rotate-180" : ""}`} />
+                    <ChevronDown size={16} className={`ml-2 shrink-0 text-gray-400 transition-transform ${isLevelDropdownOpen ? "rotate-180" : ""}`} />
                   </button>
 
                   {isLevelDropdownOpen && (
-                    <div className="absolute z-20 mt-1.5 w-full min-w-[220px] rounded-lg border border-slate-200 bg-white p-3 shadow-lg dark:border-white/10 dark:bg-[#1f2024]">
-                      <div className="mb-2 flex items-center justify-between border-b border-slate-100 pb-2 dark:border-white/10">
-                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400">เลือกระดับชั้น</span>
+                    <div className="absolute z-20 mt-1.5 w-full min-w-[220px] rounded-lg border border-gray-200 bg-white p-3 shadow-lg dark:border-white/10 dark:bg-[#1f2024]">
+                      <div className="mb-2 flex items-center justify-between border-b border-gray-100 pb-2 dark:border-white/10">
+                        <span className="text-xs font-bold text-gray-500 dark:text-gray-400">เลือกระดับชั้น</span>
                         <button
                           type="button"
                           onClick={() => setSelectedLevels((prev) => (prev.length === classLevelOptions.length ? [] : classLevelOptions.map(([key]) => key)))}
@@ -505,12 +506,12 @@ const BehaviorScoreAnalysisPage: React.FC = () => {
                       </div>
                       <div className="flex flex-col gap-1">
                         {classLevelOptions.map(([key]) => (
-                          <label key={key} className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/5">
+                          <label key={key} className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-sm text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-white/5">
                             <input
                               type="checkbox"
                               checked={selectedLevels.includes(key)}
                               onChange={() => toggleLevel(key)}
-                              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-white/20"
+                              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-white/20"
                             />
                             {CLASS_FULL_NAMES[key] || key}
                           </label>
@@ -521,29 +522,29 @@ const BehaviorScoreAnalysisPage: React.FC = () => {
                 </div>
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">วันเริ่มต้น</label>
+                <label className="mb-1.5 block text-xs font-bold text-gray-600 dark:text-gray-300">วันเริ่มต้น</label>
                 <input
                   type="date"
                   value={startDate}
                   onChange={(event) => setStartDate(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">วันสิ้นสุด</label>
+                <label className="mb-1.5 block text-xs font-bold text-gray-600 dark:text-gray-300">วันสิ้นสุด</label>
                 <input
                   type="date"
                   value={endDate}
                   onChange={(event) => setEndDate(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">ประเภท</label>
+                <label className="mb-1.5 block text-xs font-bold text-gray-600 dark:text-gray-300">ประเภท</label>
                 <select
                   value={rankType}
                   onChange={(event) => setRankType(event.target.value as RankType)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
                 >
                   <option value="negative">คะแนนเชิงลบ</option>
                   <option value="positive">คะแนนเชิงบวก</option>
@@ -551,11 +552,11 @@ const BehaviorScoreAnalysisPage: React.FC = () => {
                 </select>
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">จำนวน</label>
+                <label className="mb-1.5 block text-xs font-bold text-gray-600 dark:text-gray-300">จำนวน</label>
                 <select
                   value={limitCount}
                   onChange={(event) => setLimitCount(event.target.value as (typeof LIMIT_OPTIONS)[number])}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
                 >
                   {LIMIT_OPTIONS.map((option) => (
                     <option key={option} value={option}>{option === "all" ? "ทั้งหมด" : option}</option>
@@ -576,8 +577,8 @@ const BehaviorScoreAnalysisPage: React.FC = () => {
           </section>
 
           <section className="my-5 grid gap-4 sm:grid-cols-3">
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#2a2b2f]">
-              <p className="text-xs font-bold text-slate-500 dark:text-slate-400">นักเรียนในรายการ</p>
+            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#2a2b2f]">
+              <p className="text-xs font-bold text-gray-500 dark:text-gray-400">นักเรียนในรายการ</p>
               <p className="mt-2 text-2xl font-black">{displayRows.length}</p>
             </div>
             <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 shadow-sm dark:border-rose-500/20 dark:bg-rose-500/10">
@@ -590,52 +591,52 @@ const BehaviorScoreAnalysisPage: React.FC = () => {
             </div>
           </section>
 
-          <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#2a2b2f]">
+          <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#2a2b2f]">
             <div className="overflow-x-auto">
               <table className="min-w-[1040px] w-full border-collapse text-sm">
-                <thead className="bg-slate-100 text-xs font-bold uppercase tracking-wide text-slate-600 dark:bg-white/5 dark:text-slate-300">
+                <thead className="bg-gray-100 text-xs font-bold uppercase tracking-wide text-gray-600 dark:bg-white/5 dark:text-gray-300">
                   <tr>
-                    <th className="w-12 border-b border-r border-slate-200 p-3 text-left dark:border-white/10">#</th>
-                    <th className="border-b border-r border-slate-200 p-3 text-left dark:border-white/10">โรงเรียน</th>
-                    <th className="w-32 border-b border-r border-slate-200 p-3 text-left dark:border-white/10">ระดับชั้น</th>
-                    <th className="w-28 border-b border-r border-slate-200 p-3 text-left dark:border-white/10">รหัส</th>
-                    <th className="border-b border-r border-slate-200 p-3 text-left dark:border-white/10">ชื่อ-นามสกุล</th>
-                    <th className="w-36 border-b border-r border-slate-200 p-3 text-left dark:border-white/10">หมายเลขโทรศัพท์</th>
-                    <th className="w-28 border-b border-r border-slate-200 p-3 text-left dark:border-white/10">คะแนนบวก/ลบ</th>
-                    <th className="w-28 border-b border-slate-200 p-3 text-left dark:border-white/10">คะแนนคงเหลือ</th>
+                    <th className="w-12 border-b border-r border-gray-200 p-3 text-left dark:border-white/10">#</th>
+                    <th className="border-b border-r border-gray-200 p-3 text-left dark:border-white/10">โรงเรียน</th>
+                    <th className="w-32 border-b border-r border-gray-200 p-3 text-left dark:border-white/10">ระดับชั้น</th>
+                    <th className="w-28 border-b border-r border-gray-200 p-3 text-left dark:border-white/10">รหัส</th>
+                    <th className="border-b border-r border-gray-200 p-3 text-left dark:border-white/10">ชื่อ-นามสกุล</th>
+                    <th className="w-36 border-b border-r border-gray-200 p-3 text-left dark:border-white/10">หมายเลขโทรศัพท์</th>
+                    <th className="w-28 border-b border-r border-gray-200 p-3 text-left dark:border-white/10">คะแนนบวก/ลบ</th>
+                    <th className="w-28 border-b border-gray-200 p-3 text-left dark:border-white/10">คะแนนคงเหลือ</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(loadingReport || loadingStudents) ? (
                     <tr>
-                      <td colSpan={8} className="p-10 text-center text-slate-500 dark:text-slate-400">
+                      <td colSpan={8} className="p-10 text-center text-gray-500 dark:text-gray-400">
                         <Loader2 className="mx-auto mb-3 animate-spin text-indigo-500" size={28} />
                         กำลังโหลดข้อมูล...
                       </td>
                     </tr>
                   ) : !hasSearched ? (
                     <tr>
-                      <td colSpan={8} className="p-10 text-center text-slate-500 dark:text-slate-400">
+                      <td colSpan={8} className="p-10 text-center text-gray-500 dark:text-gray-400">
                         เลือกเงื่อนไขแล้วกด "ค้นหารายการ" เพื่อวิเคราะห์คะแนน
                       </td>
                     </tr>
                   ) : displayRows.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="p-10 text-center text-slate-500 dark:text-slate-400">
+                      <td colSpan={8} className="p-10 text-center text-gray-500 dark:text-gray-400">
                         <AlertTriangle className="mx-auto mb-3 text-amber-500" size={28} />
                         ไม่พบข้อมูลตามเงื่อนไขที่เลือก
                       </td>
                     </tr>
                   ) : (
                     displayRows.map((row, index) => (
-                      <tr key={row.student.id} className="border-b border-slate-100 transition hover:bg-indigo-50/50 dark:border-white/5 dark:hover:bg-white/5">
-                        <td className="border-r border-slate-100 p-3 font-semibold dark:border-white/5">{index + 1}</td>
-                        <td className="border-r border-slate-100 p-3 dark:border-white/5">{schoolName}</td>
-                        <td className="border-r border-slate-100 p-3 dark:border-white/5">{getClassLabel(row.student)}/{normalizeRoom(row.student.room) || "-"}</td>
-                        <td className="border-r border-slate-100 p-3 font-mono text-xs font-semibold text-indigo-700 dark:border-white/5 dark:text-indigo-300">{row.student.studentId || "-"}</td>
-                        <td className="border-r border-slate-100 p-3 font-semibold dark:border-white/5">{getStudentName(row.student)}</td>
-                        <td className="border-r border-slate-100 p-3 dark:border-white/5">{row.student.curPhone || "-"}</td>
-                        <td className={`border-r border-slate-100 p-3 font-bold dark:border-white/5 ${row.netChange < 0 ? "text-rose-600 dark:text-rose-300" : row.netChange > 0 ? "text-emerald-600 dark:text-emerald-300" : ""}`}>
+                      <tr key={row.student.id} className="border-b border-gray-100 transition hover:bg-indigo-50/50 dark:border-white/5 dark:hover:bg-white/5">
+                        <td className="border-r border-gray-100 p-3 font-semibold dark:border-white/5">{index + 1}</td>
+                        <td className="border-r border-gray-100 p-3 dark:border-white/5">{schoolName}</td>
+                        <td className="border-r border-gray-100 p-3 dark:border-white/5">{getClassLabel(row.student)}/{normalizeRoom(row.student.room) || "-"}</td>
+                        <td className="border-r border-gray-100 p-3 font-mono text-xs font-semibold text-indigo-700 dark:border-white/5 dark:text-indigo-300">{row.student.studentId || "-"}</td>
+                        <td className="border-r border-gray-100 p-3 font-semibold dark:border-white/5">{getStudentName(row.student)}</td>
+                        <td className="border-r border-gray-100 p-3 dark:border-white/5">{row.student.curPhone || "-"}</td>
+                        <td className={`border-r border-gray-100 p-3 font-bold dark:border-white/5 ${row.netChange < 0 ? "text-rose-600 dark:text-rose-300" : row.netChange > 0 ? "text-emerald-600 dark:text-emerald-300" : ""}`}>
                           {row.netChange > 0 ? "+" : ""}{row.netChange}
                         </td>
                         <td className="p-3">
@@ -662,8 +663,8 @@ const BehaviorScoreAnalysisPage: React.FC = () => {
             className="flex h-[calc(100vh-100px)] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#1e1f21]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-white/10">
-              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-white/10">
+              <h2 className="text-base font-bold text-gray-900 dark:text-white">
                 ตัวอย่างเอกสาร — วิเคราะห์คะแนนความประพฤติ
               </h2>
               <div className="flex items-center gap-2">
@@ -679,14 +680,14 @@ const BehaviorScoreAnalysisPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowPdfPreview(false)}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/10"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/10"
                   title="ปิด"
                 >
                   <X size={18} />
                 </button>
               </div>
             </div>
-            <div className="flex-1 overflow-hidden rounded-b-2xl bg-slate-100 dark:bg-slate-900">
+            <div className="flex-1 overflow-hidden rounded-b-2xl bg-gray-100 dark:bg-gray-900">
               <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
                 {buildAnalysisPdfDocument()}
               </PDFViewer>

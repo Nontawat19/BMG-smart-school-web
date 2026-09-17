@@ -253,13 +253,13 @@ const NewsManagementPage: React.FC = () => {
     <GeneralAffairsLayout>
       <div className="min-h-screen transition-colors duration-300">
         {/* ── STICKY HEADER ── */}
-        <div className="sticky top-0 z-30 bg-white/95 dark:bg-[#111318]/95 backdrop-blur border-b border-slate-200 dark:border-white/5 px-4 py-3 flex items-center justify-between gap-4 shadow-sm">
+        <div className="sticky top-0 z-30 bg-white/95 dark:bg-[#2a2b2f]/95 backdrop-blur border-b border-gray-200 dark:border-white/5 px-4 py-3 flex items-center justify-between gap-4 shadow-sm">
           <div className="flex items-center gap-3 min-w-0">
             <BackButton to="/general-affairs/home" />
-            <div className="h-5 w-px bg-slate-200 dark:bg-white/10" />
+            <div className="h-5 w-px bg-gray-200 dark:bg-white/10" />
             <div className="min-w-0">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">งานธุรการ</p>
-              <h1 className="text-sm font-black text-slate-800 dark:text-white truncate">จัดการข่าวสารประชาสัมพันธ์</h1>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">งานธุรการ</p>
+              <h1 className="text-sm font-black text-gray-800 dark:text-white truncate">จัดการข่าวสารประชาสัมพันธ์</h1>
             </div>
           </div>
           <button
@@ -280,7 +280,7 @@ const NewsManagementPage: React.FC = () => {
             </div>
           ) : newsList.length === 0 ? (
             <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-12 text-center text-gray-500">
-              <div className="w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4 text-gray-400">
+              <div className="w-20 h-20 bg-gray-100 dark:bg-[#2a2b2f] rounded-full flex items-center justify-center mx-auto mb-4 text-gray-400">
                 <ImageIcon size={40} />
               </div>
               <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1">ยังไม่มีข่าวสาร</h3>
@@ -291,7 +291,7 @@ const NewsManagementPage: React.FC = () => {
               {newsList.map((item) => (
                 <div key={item.id} className="bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden hover:shadow-md transition-all duration-300 flex flex-col group">
                   {/* Image Area */}
-                  <div className="relative h-48 bg-gray-100 dark:bg-gray-800 overflow-hidden">
+                  <div className="relative h-48 bg-gray-100 dark:bg-[#2a2b2f] overflow-hidden">
                     {item.imageUrl ? (
                       <img src={item.imageUrl} alt={item.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
                     ) : (

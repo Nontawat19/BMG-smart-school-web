@@ -1197,43 +1197,43 @@ const StudentBehaviorClassReportPage: React.FC = () => {
 
   return (
     <MainLayout>
-      <div className="min-h-screen bg-slate-50 px-3 py-5 text-slate-900 transition-colors dark:bg-[#1c1c24] dark:text-slate-100 sm:px-5 lg:px-8">
+      <div className="min-h-screen bg-gray-50 px-3 py-5 text-gray-900 transition-colors dark:bg-[#1e1f21] dark:text-gray-100 sm:px-5 lg:px-8">
         <div className="mx-auto max-w-7xl">
-          <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              {/* ไม่ hardcode ปลายทาง — หน้านี้เข้าถึงได้ทั้งจาก /academic/hub/students และ
-                  /student-support/hub ให้ BackButton ย้อนกลับตาม browser history จริง */}
-              <BackButton />
-              <div>
-                <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">Student behavior class report</p>
-                <h1 className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white">รายงานคะแนนความประพฤติ แบบเลือกห้องเรียน</h1>
+          <header className="mb-5">
+            <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 flex-1 items-center gap-4">
+                {/* ไม่ hardcode ปลายทาง — หน้านี้เข้าถึงได้ทั้งจาก /academic/hub/students และ
+                    /student-support/hub ให้ BackButton ย้อนกลับตาม browser history จริง */}
+                <BackButton />
+                <div className="min-w-0">
+                  <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-950 dark:text-white">รายงานคะแนนความประพฤติ แบบเลือกห้องเรียน</h1>
+                </div>
+              </div>
+
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  onClick={() => setIsPdfModalOpen(true)}
+                  disabled={loadingReport || loadingStudents || reportRows.length === 0}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Printer size={16} />
+                  พิมพ์รายงาน
+                </button>
+                <button
+                  onClick={buildReport}
+                  disabled={loadingReport || loadingStudents}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loadingReport ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
+                  รีเฟรชรายงาน
+                </button>
               </div>
             </div>
+          </header>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setIsPdfModalOpen(true)}
-                disabled={loadingReport || loadingStudents || reportRows.length === 0}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Printer size={16} />
-                พิมพ์รายงาน
-              </button>
-              <button
-              onClick={buildReport}
-              disabled={loadingReport || loadingStudents}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              
-              {loadingReport ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
-              รีเฟรชรายงาน
-            </button>
-            </div>
-          </div>
-
-          <section className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#2a2b2f]">
-            <div className="border-b border-slate-200 px-5 py-4 dark:border-white/10">
-              <div className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+          <section className="rounded-xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#2a2b2f]">
+            <div className="border-b border-gray-200 px-5 py-4 dark:border-white/10">
+              <div className="flex items-center gap-2 text-sm font-bold text-gray-700 dark:text-gray-200">
                 <ShieldAlert size={18} className="text-indigo-500" />
                 ตัวกรองรายงาน
               </div>
@@ -1241,74 +1241,74 @@ const StudentBehaviorClassReportPage: React.FC = () => {
 
             <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-4">
               <div>
-                <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">โรงเรียน</label>
+                <label className="mb-1.5 block text-xs font-bold text-gray-600 dark:text-gray-300">โรงเรียน</label>
                 <input
                   value={schoolName || schoolId || "-"}
                   disabled
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                  className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">ปีการศึกษา</label>
+                <label className="mb-1.5 block text-xs font-bold text-gray-600 dark:text-gray-300">ปีการศึกษา</label>
                 <input
                   value={academicYear}
                   onChange={(event) => setAcademicYear(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">ชั้นเรียน</label>
+                <label className="mb-1.5 block text-xs font-bold text-gray-600 dark:text-gray-300">ชั้นเรียน</label>
                 <div className="relative">
-                  <Users className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Users className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                   <select
                     value={selectedClassLevel}
                     onChange={(event) => setSelectedClassLevel(event.target.value)}
-                    className="block w-full appearance-none rounded-xl border border-slate-300 bg-slate-50 py-2.5 pl-9 pr-10 text-sm font-semibold text-slate-900 outline-none transition hover:bg-slate-100 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:text-white dark:hover:bg-white/10 dark:focus:ring-indigo-500/20"
+                    className="block w-full appearance-none rounded-xl border border-gray-300 bg-gray-50 py-2.5 pl-9 pr-10 text-sm font-semibold text-gray-900 outline-none transition hover:bg-gray-100 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:text-white dark:hover:bg-white/10 dark:focus:ring-indigo-500/20"
                   >
                     <option value="">-- กรุณาเลือกชั้นเรียน --</option>
                     {classLevelOptions.map(([key, name]) => <option key={key} value={key}>{name}</option>)}
                   </select>
-                  <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 </div>
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">ห้องเรียน</label>
+                <label className="mb-1.5 block text-xs font-bold text-gray-600 dark:text-gray-300">ห้องเรียน</label>
                 <select
                   value={selectedRoom}
                   onChange={(event) => setSelectedRoom(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
                 >
                   <option value="">ทุกห้อง</option>
                   {roomOptions.map((room) => <option key={room} value={room}>{room}</option>)}
                 </select>
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">วันที่เริ่มต้น</label>
+                <label className="mb-1.5 block text-xs font-bold text-gray-600 dark:text-gray-300">วันที่เริ่มต้น</label>
                 <input
                   type="date"
                   value={startDate}
                   onChange={(event) => setStartDate(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">วันที่สิ้นสุด</label>
+                <label className="mb-1.5 block text-xs font-bold text-gray-600 dark:text-gray-300">วันที่สิ้นสุด</label>
                 <input
                   type="date"
                   value={endDate}
                   onChange={(event) => setEndDate(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">ค้นหารายการ</label>
+                <label className="mb-1.5 block text-xs font-bold text-gray-600 dark:text-gray-300">ค้นหารายการ</label>
                 <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                  <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                   <input
                     value={searchTerm}
                     onChange={(event) => setSearchTerm(event.target.value)}
                     placeholder="ค้นหาชื่อ รหัสนักเรียน หรือชั้นเรียน..."
-                    className="w-full rounded-lg border border-slate-300 bg-white py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
+                    className="w-full rounded-lg border border-gray-300 bg-white py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
                   />
                 </div>
               </div>
@@ -1316,8 +1316,8 @@ const StudentBehaviorClassReportPage: React.FC = () => {
           </section>
 
           <section className="my-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#2a2b2f]">
-              <p className="text-xs font-bold text-slate-500 dark:text-slate-400">นักเรียนในรายงาน</p>
+            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#2a2b2f]">
+              <p className="text-xs font-bold text-gray-500 dark:text-gray-400">นักเรียนในรายงาน</p>
               <p className="mt-2 text-2xl font-black">{filteredRows.length}</p>
             </div>
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm dark:border-emerald-500/20 dark:bg-emerald-500/10">
@@ -1334,13 +1334,13 @@ const StudentBehaviorClassReportPage: React.FC = () => {
             </div>
           </section>
 
-          <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#2a2b2f]">
-            <div className="flex flex-col gap-2 border-b border-slate-200 px-5 py-4 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between">
+          <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#2a2b2f]">
+            <div className="flex flex-col gap-2 border-b border-gray-200 px-5 py-4 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="font-bold text-slate-950 dark:text-white">รายการคะแนนความประพฤติรายห้อง</h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">เลือกนักเรียนเพื่อเตรียมพิมพ์หรือเปิดรายละเอียดรายคน</p>
+                <h2 className="font-bold text-gray-950 dark:text-white">รายการคะแนนความประพฤติรายห้อง</h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400">เลือกนักเรียนเพื่อเตรียมพิมพ์หรือเปิดรายละเอียดรายคน</p>
               </div>
-              <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+              <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                 <CheckCircle2 size={14} className="text-emerald-500" />
                 เลือกแล้ว {selectedStudentIds.length} คน
               </div>
@@ -1348,60 +1348,60 @@ const StudentBehaviorClassReportPage: React.FC = () => {
 
             <div className="overflow-x-auto">
               <table className="min-w-[1040px] w-full border-collapse text-sm">
-                <thead className="bg-slate-100 text-xs font-bold uppercase tracking-wide text-slate-600 dark:bg-white/5 dark:text-slate-300">
+                <thead className="bg-gray-100 text-xs font-bold uppercase tracking-wide text-gray-600 dark:bg-white/5 dark:text-gray-300">
                   <tr>
-                    <th className="w-10 border-b border-r border-slate-200 p-3 text-left dark:border-white/10">
+                    <th className="w-10 border-b border-r border-gray-200 p-3 text-left dark:border-white/10">
                       <input type="checkbox" checked={allFilteredSelected} onChange={toggleAll} />
                     </th>
-                    <th className="w-12 border-b border-r border-slate-200 p-3 text-left dark:border-white/10">#</th>
-                    <th className="w-28 border-b border-r border-slate-200 p-3 text-left dark:border-white/10">รหัสนักเรียน</th>
-                    <th className="border-b border-r border-slate-200 p-3 text-left dark:border-white/10">ชื่อ-นามสกุล</th>
-                    <th className="w-36 border-b border-r border-slate-200 p-3 text-left dark:border-white/10">ชั้น</th>
-                    <th className="w-28 border-b border-r border-slate-200 p-3 text-left dark:border-white/10">คะแนนเพิ่มบวก</th>
-                    <th className="w-28 border-b border-r border-slate-200 p-3 text-left dark:border-white/10">คะแนนหักรวม</th>
-                    <th className="w-28 border-b border-r border-slate-200 p-3 text-left dark:border-white/10">คะแนนคงเหลือ</th>
-                    <th className="w-56 border-b border-slate-200 p-3 text-left dark:border-white/10">Config</th>
+                    <th className="w-12 border-b border-r border-gray-200 p-3 text-left dark:border-white/10">#</th>
+                    <th className="w-28 border-b border-r border-gray-200 p-3 text-left dark:border-white/10">รหัสนักเรียน</th>
+                    <th className="border-b border-r border-gray-200 p-3 text-left dark:border-white/10">ชื่อ-นามสกุล</th>
+                    <th className="w-36 border-b border-r border-gray-200 p-3 text-left dark:border-white/10">ชั้น</th>
+                    <th className="w-28 border-b border-r border-gray-200 p-3 text-left dark:border-white/10">คะแนนเพิ่มบวก</th>
+                    <th className="w-28 border-b border-r border-gray-200 p-3 text-left dark:border-white/10">คะแนนหักรวม</th>
+                    <th className="w-28 border-b border-r border-gray-200 p-3 text-left dark:border-white/10">คะแนนคงเหลือ</th>
+                    <th className="w-56 border-b border-gray-200 p-3 text-left dark:border-white/10">Config</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(loadingReport || loadingStudents) ? (
                     [...Array(8)].map((_, i) => (
-                      <tr key={`skeleton-${i}`} className="border-b border-slate-100 dark:border-white/5">
-                        <td className="border-r border-slate-200 p-3 dark:border-white/10"><div className="h-4 w-4 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
-                        <td className="border-r border-slate-200 p-3 dark:border-white/10"><div className="h-3.5 w-6 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
-                        <td className="border-r border-slate-200 p-3 dark:border-white/10"><div className="h-3.5 w-20 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
-                        <td className="border-r border-slate-200 p-3 dark:border-white/10"><div className="h-3.5 w-32 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
-                        <td className="border-r border-slate-200 p-3 dark:border-white/10"><div className="h-3.5 w-16 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
-                        <td className="border-r border-slate-200 p-3 dark:border-white/10"><div className="h-3.5 w-12 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
-                        <td className="border-r border-slate-200 p-3 dark:border-white/10"><div className="h-3.5 w-12 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
-                        <td className="border-r border-slate-200 p-3 dark:border-white/10"><div className="h-3.5 w-12 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                      <tr key={`skeleton-${i}`} className="border-b border-gray-100 dark:border-white/5">
+                        <td className="border-r border-gray-200 p-3 dark:border-white/10"><div className="h-4 w-4 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="border-r border-gray-200 p-3 dark:border-white/10"><div className="h-3.5 w-6 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="border-r border-gray-200 p-3 dark:border-white/10"><div className="h-3.5 w-20 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="border-r border-gray-200 p-3 dark:border-white/10"><div className="h-3.5 w-32 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="border-r border-gray-200 p-3 dark:border-white/10"><div className="h-3.5 w-16 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="border-r border-gray-200 p-3 dark:border-white/10"><div className="h-3.5 w-12 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="border-r border-gray-200 p-3 dark:border-white/10"><div className="h-3.5 w-12 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="border-r border-gray-200 p-3 dark:border-white/10"><div className="h-3.5 w-12 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
                         <td className="p-3"><div className="h-6 w-40 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
                       </tr>
                     ))
                   ) : filteredRows.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="p-10 text-center text-slate-500 dark:text-slate-400">
+                      <td colSpan={9} className="p-10 text-center text-gray-500 dark:text-gray-400">
                         <AlertTriangle className="mx-auto mb-3 text-amber-500" size={28} />
                         ไม่พบข้อมูลตามเงื่อนไขที่เลือก
                       </td>
                     </tr>
                   ) : (
                     filteredRows.map((row, index) => (
-                      <tr key={row.student.id} className="border-b border-slate-100 transition hover:bg-indigo-50/50 dark:border-white/5 dark:hover:bg-white/5">
-                        <td className="border-r border-slate-100 p-3 dark:border-white/5">
+                      <tr key={row.student.id} className="border-b border-gray-100 transition hover:bg-indigo-50/50 dark:border-white/5 dark:hover:bg-white/5">
+                        <td className="border-r border-gray-100 p-3 dark:border-white/5">
                           <input
                             type="checkbox"
                             checked={selectedStudentIds.includes(row.student.id)}
                             onChange={() => toggleStudent(row.student.id)}
                           />
                         </td>
-                        <td className="border-r border-slate-100 p-3 font-semibold dark:border-white/5">{index + 1}</td>
-                        <td className="border-r border-slate-100 p-3 font-mono text-xs font-semibold text-indigo-700 dark:border-white/5 dark:text-indigo-300">{row.student.studentId || "-"}</td>
-                        <td className="border-r border-slate-100 p-3 font-semibold dark:border-white/5">{getStudentName(row.student)}</td>
-                        <td className="border-r border-slate-100 p-3 dark:border-white/5">{getClassLabel(row.student)}</td>
-                        <td className="border-r border-slate-100 p-3 text-emerald-600 dark:border-white/5 dark:text-emerald-300">{row.plusScore}</td>
-                        <td className="border-r border-slate-100 p-3 text-rose-600 dark:border-white/5 dark:text-rose-300">{row.minusScore}</td>
-                        <td className="border-r border-slate-100 p-3 dark:border-white/5">
+                        <td className="border-r border-gray-100 p-3 font-semibold dark:border-white/5">{index + 1}</td>
+                        <td className="border-r border-gray-100 p-3 font-mono text-xs font-semibold text-indigo-700 dark:border-white/5 dark:text-indigo-300">{row.student.studentId || "-"}</td>
+                        <td className="border-r border-gray-100 p-3 font-semibold dark:border-white/5">{getStudentName(row.student)}</td>
+                        <td className="border-r border-gray-100 p-3 dark:border-white/5">{getClassLabel(row.student)}</td>
+                        <td className="border-r border-gray-100 p-3 text-emerald-600 dark:border-white/5 dark:text-emerald-300">{row.plusScore}</td>
+                        <td className="border-r border-gray-100 p-3 text-rose-600 dark:border-white/5 dark:text-rose-300">{row.minusScore}</td>
+                        <td className="border-r border-gray-100 p-3 dark:border-white/5">
                           <span className={`inline-flex min-w-14 justify-center rounded-full px-2.5 py-1 text-xs font-black ring-1 ${getScoreBadgeClass(row.currentScore)}`}>
                             {row.currentScore}
                           </span>
@@ -1416,7 +1416,7 @@ const StudentBehaviorClassReportPage: React.FC = () => {
                             </button>
                             <button
                               onClick={() => printStudent(row)}
-                              className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-200 dark:bg-white/10 dark:text-slate-200"
+                              className="inline-flex items-center gap-1 rounded-md bg-gray-100 px-2.5 py-1.5 text-xs font-bold text-gray-700 transition hover:bg-gray-200 dark:bg-white/10 dark:text-gray-200"
                             >
                               <Printer size={13} />
                               print รายคน
@@ -1436,20 +1436,20 @@ const StudentBehaviorClassReportPage: React.FC = () => {
       {activeRow && (
         <div className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-black/55 px-3 pb-5 pt-20 sm:px-6">
           <div className="mt-0 max-h-[85vh] w-full max-w-5xl overflow-hidden rounded bg-white shadow-2xl dark:bg-white">
-            <div className="flex items-center justify-between border-b border-slate-200 px-7 py-5">
-              <h3 className="text-xl font-bold text-slate-800">
+            <div className="flex items-center justify-between border-b border-gray-200 px-7 py-5">
+              <h3 className="text-xl font-bold text-gray-800">
                 ข้อมูลของ {getStudentName(activeRow.student)}
               </h3>
               <button
                 onClick={() => setActiveRow(null)}
-                className="rounded px-2 py-1 text-3xl font-normal leading-none text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                className="rounded px-2 py-1 text-3xl font-normal leading-none text-gray-500 transition hover:bg-gray-100 hover:text-gray-800"
                 aria-label="ปิดหน้าต่างรายละเอียด"
               >
                 ×
               </button>
             </div>
 
-            <div className="border-b border-slate-200 px-7 py-6">
+            <div className="border-b border-gray-200 px-7 py-6">
               <div className="mb-4 flex justify-end">
                 <button
                   onClick={() => printStudent(activeRow)}
@@ -1461,20 +1461,20 @@ const StudentBehaviorClassReportPage: React.FC = () => {
               </div>
 
               {activeRow.logs.length === 0 ? (
-                <div className="rounded border border-dashed border-slate-300 p-10 text-center text-base text-slate-500">
+                <div className="rounded border border-dashed border-gray-300 p-10 text-center text-base text-gray-500">
                   <FileText className="mx-auto mb-2" size={24} />
                   ไม่พบประวัติในช่วงวันที่ที่เลือก
                 </div>
               ) : (
                 <div className="max-h-[52vh] overflow-auto">
-                  <table className="w-full min-w-[900px] border-collapse text-base text-slate-800">
-                    <thead className="bg-slate-100 text-slate-700">
+                  <table className="w-full min-w-[900px] border-collapse text-base text-gray-800">
+                    <thead className="bg-gray-100 text-gray-700">
                       <tr>
-                        <th className="w-16 border border-slate-200 px-5 py-5 text-left font-bold">#</th>
-                        <th className="w-52 border border-slate-200 px-5 py-5 text-left font-bold">วันที่</th>
-                        <th className="w-72 border border-slate-200 px-5 py-5 text-left font-bold">ประเภทความผิด</th>
-                        <th className="border border-slate-200 px-5 py-5 text-left font-bold">หัวข้อ</th>
-                        <th className="w-32 border border-slate-200 px-5 py-5 text-left font-bold">คะแนน</th>
+                        <th className="w-16 border border-gray-200 px-5 py-5 text-left font-bold">#</th>
+                        <th className="w-52 border border-gray-200 px-5 py-5 text-left font-bold">วันที่</th>
+                        <th className="w-72 border border-gray-200 px-5 py-5 text-left font-bold">ประเภทความผิด</th>
+                        <th className="border border-gray-200 px-5 py-5 text-left font-bold">หัวข้อ</th>
+                        <th className="w-32 border border-gray-200 px-5 py-5 text-left font-bold">คะแนน</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1483,12 +1483,12 @@ const StudentBehaviorClassReportPage: React.FC = () => {
                         const dateB = toDate(b.createdAt)?.getTime() || 0;
                         return dateA - dateB;
                       }).map((log, index) => (
-                        <tr key={log.id} className="hover:bg-slate-50">
-                          <td className="border border-slate-200 px-5 py-4 font-semibold">{index + 1}</td>
-                          <td className="border border-slate-200 px-5 py-4">{formatThaiDate(log.createdAt)}</td>
-                          <td className="border border-slate-200 px-5 py-4 font-semibold">{resolveBehaviorLogDisplay(log, behaviorScoreConfig).category}</td>
-                          <td className="border border-slate-200 px-5 py-4 font-semibold">{resolveBehaviorLogDisplay(log, behaviorScoreConfig).topic}</td>
-                          <td className="border border-slate-200 px-5 py-4">
+                        <tr key={log.id} className="hover:bg-gray-50">
+                          <td className="border border-gray-200 px-5 py-4 font-semibold">{index + 1}</td>
+                          <td className="border border-gray-200 px-5 py-4">{formatThaiDate(log.createdAt)}</td>
+                          <td className="border border-gray-200 px-5 py-4 font-semibold">{resolveBehaviorLogDisplay(log, behaviorScoreConfig).category}</td>
+                          <td className="border border-gray-200 px-5 py-4 font-semibold">{resolveBehaviorLogDisplay(log, behaviorScoreConfig).topic}</td>
+                          <td className="border border-gray-200 px-5 py-4">
                             {Number(log.points || 0) > 0 ? "+" : ""}{Number(log.points || 0)}
                           </td>
                         </tr>
@@ -1515,14 +1515,14 @@ const StudentBehaviorClassReportPage: React.FC = () => {
       {isPdfModalOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 px-4 py-6 backdrop-blur-sm transition-opacity">
           <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-[#1f2024] dark:ring-1 dark:ring-white/10">
-            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4 dark:border-white/10 dark:bg-white/5">
-              <h2 className="flex items-center gap-2 text-lg font-bold text-slate-800 dark:text-white">
+            <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-6 py-4 dark:border-white/10 dark:bg-white/5">
+              <h2 className="flex items-center gap-2 text-lg font-bold text-gray-800 dark:text-white">
                 <Printer size={18} className="text-sky-500" />
                 ตั้งค่าการพิมพ์รายงาน
               </h2>
               <button
                 onClick={() => setIsPdfModalOpen(false)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-600 dark:hover:bg-white/10 dark:hover:text-white"
+                className="rounded-lg p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600 dark:hover:bg-white/10 dark:hover:text-white"
               >
                 <span className="sr-only">Close</span>
                 <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
@@ -1531,7 +1531,7 @@ const StudentBehaviorClassReportPage: React.FC = () => {
             
             <div className="p-6">
               <div className="mb-5 space-y-3">
-                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/5">
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 p-3 hover:bg-gray-50 dark:border-white/10 dark:hover:bg-white/5">
                   <input
                     type="radio"
                     name="pdfMode"
@@ -1540,12 +1540,12 @@ const StudentBehaviorClassReportPage: React.FC = () => {
                     onChange={() => setPdfFilterMode("all")}
                   />
                   <div>
-                    <div className="font-bold text-slate-800 dark:text-white">พิมพ์ข้อมูลทั้งหมด</div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">พิมพ์รายชื่อนักเรียนทั้งหมดตามที่ค้นหาหรือตามห้องที่เลือก</div>
+                    <div className="font-bold text-gray-800 dark:text-white">พิมพ์ข้อมูลทั้งหมด</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">พิมพ์รายชื่อนักเรียนทั้งหมดตามที่ค้นหาหรือตามห้องที่เลือก</div>
                   </div>
                 </label>
 
-                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/5">
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 p-3 hover:bg-gray-50 dark:border-white/10 dark:hover:bg-white/5">
                   <input
                     type="radio"
                     name="pdfMode"
@@ -1554,15 +1554,15 @@ const StudentBehaviorClassReportPage: React.FC = () => {
                     onChange={() => setPdfFilterMode("score")}
                   />
                   <div className="flex-1">
-                    <div className="font-bold text-slate-800 dark:text-white">กำหนดช่วงคะแนน</div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">กรองเฉพาะนักเรียนที่มีคะแนนตรงกับเงื่อนไข</div>
+                    <div className="font-bold text-gray-800 dark:text-white">กำหนดช่วงคะแนน</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">กรองเฉพาะนักเรียนที่มีคะแนนตรงกับเงื่อนไข</div>
                     
                     {pdfFilterMode === "score" && (
                       <div className="mt-3 flex items-center gap-2">
                         <select
                           value={pdfScoreOp}
                           onChange={(e) => setPdfScoreOp(e.target.value as any)}
-                          className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-white/10 dark:bg-black/20 dark:text-white"
+                          className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-white/10 dark:bg-black/20 dark:text-white"
                         >
                           <option value=">=">มากกว่าหรือเท่ากับ</option>
                           <option value="<=">น้อยกว่าหรือเท่ากับ</option>
@@ -1574,14 +1574,14 @@ const StudentBehaviorClassReportPage: React.FC = () => {
                           type="number"
                           value={pdfScoreVal}
                           onChange={(e) => setPdfScoreVal(Number(e.target.value))}
-                          className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-white/10 dark:bg-black/20 dark:text-white"
+                          className="w-20 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-white/10 dark:bg-black/20 dark:text-white"
                         />
                       </div>
                     )}
                   </div>
                 </label>
 
-                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/5">
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 p-3 hover:bg-gray-50 dark:border-white/10 dark:hover:bg-white/5">
                   <input
                     type="radio"
                     name="pdfMode"
@@ -1590,15 +1590,15 @@ const StudentBehaviorClassReportPage: React.FC = () => {
                     onChange={() => setPdfFilterMode("rank")}
                   />
                   <div className="flex-1">
-                    <div className="font-bold text-slate-800 dark:text-white">จัดอันดับคะแนน</div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">เลือกพิมพ์เฉพาะนักเรียนที่มีคะแนนสูงสุดหรือต่ำสุด</div>
+                    <div className="font-bold text-gray-800 dark:text-white">จัดอันดับคะแนน</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">เลือกพิมพ์เฉพาะนักเรียนที่มีคะแนนสูงสุดหรือต่ำสุด</div>
                     
                     {pdfFilterMode === "rank" && (
                       <div className="mt-3 flex items-center gap-2">
                         <select
                           value={pdfRankMode}
                           onChange={(e) => setPdfRankMode(e.target.value as any)}
-                          className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-white/10 dark:bg-black/20 dark:text-white"
+                          className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-white/10 dark:bg-black/20 dark:text-white"
                         >
                           <option value="top">คะแนนมากที่สุด</option>
                           <option value="bottom">คะแนนน้อยที่สุด</option>
@@ -1607,9 +1607,9 @@ const StudentBehaviorClassReportPage: React.FC = () => {
                           type="number"
                           value={pdfRankCount}
                           onChange={(e) => setPdfRankCount(Number(e.target.value))}
-                          className="w-16 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-white/10 dark:bg-black/20 dark:text-white"
+                          className="w-16 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-white/10 dark:bg-black/20 dark:text-white"
                         />
-                        <span className="text-sm text-slate-600 dark:text-slate-300">อันดับ</span>
+                        <span className="text-sm text-gray-600 dark:text-gray-300">อันดับ</span>
                       </div>
                     )}
                   </div>
@@ -1617,10 +1617,10 @@ const StudentBehaviorClassReportPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4 dark:border-white/10 dark:bg-white/5">
+            <div className="flex items-center justify-end gap-3 border-t border-gray-200 bg-gray-50 px-6 py-4 dark:border-white/10 dark:bg-white/5">
               <button
                 onClick={() => setIsPdfModalOpen(false)}
-                className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-white/10"
+                className="rounded-lg px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-200 dark:text-gray-300 dark:hover:bg-white/10"
               >
                 ยกเลิก
               </button>
@@ -1645,8 +1645,8 @@ const StudentBehaviorClassReportPage: React.FC = () => {
             className="flex h-[calc(100vh-100px)] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#1e1f21]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-white/10">
-              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-white/10">
+              <h2 className="text-base font-bold text-gray-900 dark:text-white">
                 ตัวอย่างเอกสาร — {pdfPreview.fileName}
               </h2>
               <div className="flex items-center gap-2">
@@ -1662,14 +1662,14 @@ const StudentBehaviorClassReportPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setPdfPreview(null)}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/10"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/10"
                   title="ปิด"
                 >
                   <X size={18} />
                 </button>
               </div>
             </div>
-            <div className="flex-1 overflow-hidden rounded-b-2xl bg-slate-100 dark:bg-slate-900">
+            <div className="flex-1 overflow-hidden rounded-b-2xl bg-gray-100 dark:bg-gray-900">
               <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
                 {pdfPreview.document as any}
               </PDFViewer>

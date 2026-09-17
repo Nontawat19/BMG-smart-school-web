@@ -663,22 +663,24 @@ const BehaviorScoreConfigPage: React.FC = () => {
     <MainLayout>
       <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] transition-colors duration-300 p-4 sm:p-6 lg:p-8">
         <div className="max-w-6xl mx-auto space-y-6">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-4">
+          <header>
+            <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center">
               <BackButton to="/academic/hub/settings" />
-              <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl">
-                <ShieldCheck className="w-7 h-7 text-emerald-600 dark:text-emerald-400" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                  ตั้งค่าคะแนนพฤติกรรม
-                </h1>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  กำหนดรายการเพิ่ม-ลดคะแนนและกรอบคะแนนความประพฤติของนักเรียน
-                </p>
+              <div className="flex items-center gap-4 min-w-0">
+                <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl shrink-0">
+                  <ShieldCheck className="w-7 h-7 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div className="min-w-0">
+                  <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white">
+                    ตั้งค่าคะแนนพฤติกรรม
+                  </h1>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    กำหนดรายการเพิ่ม-ลดคะแนนและกรอบคะแนนความประพฤติของนักเรียน
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
+          </header>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-white dark:bg-[#2a2b2f] rounded-xl border border-gray-200 dark:border-gray-700 p-5">
@@ -845,8 +847,8 @@ const BehaviorScoreConfigPage: React.FC = () => {
                   <p className="text-xs text-orange-700 dark:text-orange-300">กลับก่อนเวลา</p>
                   <p className="text-xl font-bold text-gray-900 dark:text-white mt-1">{attendanceConfig.studentCheckoutTime}</p>
                 </div>
-                <div className="rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 p-4">
-                  <p className="text-xs text-slate-600 dark:text-slate-300">ตรวจไม่ลงเวลาออกหลัง</p>
+                <div className="rounded-xl bg-gray-50 dark:bg-[#2a2b2f]/50 border border-gray-200 dark:border-gray-700 p-4">
+                  <p className="text-xs text-gray-600 dark:text-gray-300">ตรวจไม่ลงเวลาออกหลัง</p>
                   <p className="text-xl font-bold text-gray-900 dark:text-white mt-1">{attendanceConfig.studentCheckoutEnd}</p>
                 </div>
               </div>

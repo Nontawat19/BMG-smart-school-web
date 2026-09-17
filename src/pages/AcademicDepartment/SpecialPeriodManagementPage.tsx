@@ -302,21 +302,21 @@ const SpecialPeriodManagementPage: React.FC = () => {
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <MainLayout>
-      <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white">
+      <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 min-h-screen bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white">
         <div className="max-w-6xl mx-auto space-y-4">
 
           {/* Header bar */}
-          <div className="flex items-center gap-3">
+          <header className="flex items-center gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f]">
             <BackButton to="/academic/hub/scheduling" />
             <div className="flex-1 min-w-0">
-              <h1 className="text-lg font-extrabold leading-tight truncate">จัดการคาบเรียนพิเศษ</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight truncate text-gray-900 dark:text-white">จัดการคาบเรียนพิเศษ</h1>
             </div>
             <Link to="/academic/behavior-score-config"
               className="shrink-0 inline-flex items-center gap-1.5 text-xs font-bold text-violet-600 dark:text-violet-400 hover:underline">
               <Shield size={13} />
               ตั้งค่าหักคะแนนพฤติกรรม
             </Link>
-          </div>
+          </header>
 
           {/* ─ Form ─ */}
           <div className={`bg-white dark:bg-[#2a2b2f] rounded-2xl p-4 shadow-sm border transition-all ${editingPeriodId ? 'border-indigo-500 ring-1 ring-indigo-500' : 'border-gray-100 dark:border-gray-700'}`}>

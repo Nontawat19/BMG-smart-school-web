@@ -1012,22 +1012,24 @@ const StudentSchedulePage: React.FC = () => {
 
   return (
     <MainLayout>
-      <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white transition-colors duration-300">
+      <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-h-screen bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white transition-colors duration-300">
         <div className="max-w-7xl mx-auto">
 
           {/* Header Section */}
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-            <div>
-              <BackButton to="/academic/hub/scheduling" className="mb-4" />
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3 mt-2">
-                <Calendar className="text-indigo-600 dark:text-indigo-400" size={32} />
-                ดูตารางเรียนนักเรียน
-              </h1>
-              <p className="text-gray-500 dark:text-gray-400 mt-1 text-base">
-                ตรวจสอบและพิมพ์ตารางเรียนของแต่ละชั้นเรียน
-              </p>
+          <header className="mb-8">
+            <div className="flex items-center gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f]">
+              <BackButton to="/academic/hub/scheduling" />
+              <div className="min-w-0">
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-3">
+                  <Calendar className="text-indigo-600 dark:text-indigo-400" size={28} />
+                  ดูตารางเรียนนักเรียน
+                </h1>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  ตรวจสอบและพิมพ์ตารางเรียนของแต่ละชั้นเรียน
+                </p>
+              </div>
             </div>
-          </div>
+          </header>
 
           {/* Control Bar */}
           <div className="bg-white dark:bg-[#2a2b2f] p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 mb-6 sticky top-[70px] z-30">
@@ -1145,12 +1147,12 @@ const StudentSchedulePage: React.FC = () => {
           {/* Content Area */}
           <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden min-h-[600px]">
             {isLoading ? (
-              <div className="flex flex-col justify-center items-center h-[600px] bg-gray-50 dark:bg-[#202125]">
+              <div className="flex flex-col justify-center items-center h-[600px] bg-gray-50 dark:bg-[#1e1f21]">
                 <Loader2 className="animate-spin text-indigo-600 mb-4" size={48} />
                 <p className="text-gray-500 font-medium">กำลังโหลดข้อมูลตารางเรียน...</p>
               </div>
             ) : !selectedClass ? (
-              <div className="flex flex-col justify-center items-center h-[600px] bg-gray-50 dark:bg-[#202125] text-center p-8">
+              <div className="flex flex-col justify-center items-center h-[600px] bg-gray-50 dark:bg-[#1e1f21] text-center p-8">
                 <div className="w-24 h-24 bg-indigo-100 dark:bg-indigo-900/30 rounded-full flex items-center justify-center mb-6">
                   <Users className="text-indigo-600 dark:text-indigo-400" size={48} />
                 </div>
@@ -1160,7 +1162,7 @@ const StudentSchedulePage: React.FC = () => {
                 </p>
               </div>
             ) : (
-              <div className="w-full h-[85vh] bg-gray-100 dark:bg-gray-900">
+              <div className="w-full h-[85vh] bg-gray-100 dark:bg-[#1e1f21]">
                 {/* Prevent PDFViewer crash if data is empty for Bulk view */}
                 {(!selectedClass) ? (
                   <div className="flex flex-col justify-center items-center h-full text-center p-8">
@@ -1238,7 +1240,7 @@ const StudentSchedulePage: React.FC = () => {
                 </button>
               </div>
             </div>
-            <div className="flex-1 overflow-hidden rounded-b-2xl bg-gray-100 dark:bg-gray-900">
+            <div className="flex-1 overflow-hidden rounded-b-2xl bg-gray-100 dark:bg-[#1e1f21]">
               <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
                 {buildClassPdfDocument()}
               </PDFViewer>
@@ -1280,7 +1282,7 @@ const StudentSchedulePage: React.FC = () => {
                 </button>
               </div>
             </div>
-            <div className="flex-1 overflow-hidden rounded-b-2xl bg-gray-100 dark:bg-gray-900">
+            <div className="flex-1 overflow-hidden rounded-b-2xl bg-gray-100 dark:bg-[#1e1f21]">
               <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
                 {buildBulkPdfDocument()}
               </PDFViewer>

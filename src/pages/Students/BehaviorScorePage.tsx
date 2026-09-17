@@ -841,49 +841,51 @@ export default function BehaviorScorePage() {
 
   return (
     <MainLayout>
-      <div className="min-h-screen bg-slate-50 dark:bg-[#121318] p-4 md:p-8">
+      <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] p-4 md:p-8">
         <div className="max-w-7xl mx-auto space-y-6">
           
           {/* Header & Back Button */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              {/* ไม่ hardcode ปลายทาง — หน้านี้เข้าถึงได้ทั้งจาก /academic/hub/students และ
-                  /student-support/hub ให้ BackButton ย้อนกลับตาม browser history จริง */}
-              <BackButton />
-              <div>
-                <h1 className="text-2xl font-black text-gray-900 dark:text-white flex items-center gap-2">
-                  <Shield className="w-7 h-7 text-indigo-600 dark:text-indigo-400" />
-                  ระบบบันทึกคะแนนความประพฤติ
-                </h1>
-                <p className="text-gray-500 dark:text-gray-400 text-sm mt-0.5">
-                  เพิ่ม หัก และบริหารจัดการคะแนนพฤติกรรมของนักเรียนรายบุคคลหรือแบบรายกลุ่ม
-                </p>
+          <header>
+            <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 flex-1 items-center gap-4">
+                {/* ไม่ hardcode ปลายทาง — หน้านี้เข้าถึงได้ทั้งจาก /academic/hub/students และ
+                    /student-support/hub ให้ BackButton ย้อนกลับตาม browser history จริง */}
+                <BackButton />
+                <div className="min-w-0">
+                  <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-2">
+                    <Shield className="w-7 h-7 text-indigo-600 dark:text-indigo-400" />
+                    ระบบบันทึกคะแนนความประพฤติ
+                  </h1>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    เพิ่ม หัก และบริหารจัดการคะแนนพฤติกรรมของนักเรียนรายบุคคลหรือแบบรายกลุ่ม
+                  </p>
+                </div>
               </div>
-            </div>
 
-            {/* Config Button (Only for Academic Management) */}
-            <Link
-              to="/academic/behavior-score-config"
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-[#202124] border border-gray-200 dark:border-gray-800 rounded-xl text-sm font-semibold text-gray-700 dark:text-gray-300 shadow-sm hover:bg-gray-50 dark:hover:bg-[#2c2d30] transition-colors"
-            >
-              <SlidersHorizontal className="w-4 h-4" />
-              ตั้งค่าเกณฑ์คะแนน
-            </Link>
-          </div>
+              {/* Config Button (Only for Academic Management) */}
+              <Link
+                to="/academic/behavior-score-config"
+                className="inline-flex shrink-0 items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-800 rounded-xl text-sm font-semibold text-gray-700 dark:text-gray-300 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+                ตั้งค่าเกณฑ์คะแนน
+              </Link>
+            </div>
+          </header>
 
           {/* Quick Stats Panel */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-white dark:bg-[#1e1f24] rounded-2xl p-4 shadow-sm border border-transparent dark:border-gray-800">
+            <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-4 shadow-sm border border-transparent dark:border-gray-800">
               <div className="text-gray-400 text-xs font-semibold">จำนวนนักเรียนทั้งหมด</div>
               <div className="text-2xl font-extrabold text-gray-800 dark:text-white mt-1">{students.length} คน</div>
             </div>
-            <div className="bg-white dark:bg-[#1e1f24] rounded-2xl p-4 shadow-sm border border-transparent dark:border-gray-800">
+            <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-4 shadow-sm border border-transparent dark:border-gray-800">
               <div className="text-emerald-500 text-xs font-semibold">ความประพฤติดีเยี่ยม (90+)</div>
               <div className="text-2xl font-extrabold text-emerald-500 mt-1">
                 {students.filter(s => (s.behaviorScore ?? 100) >= 90).length} คน
               </div>
             </div>
-            <div className="bg-white dark:bg-[#1e1f24] rounded-2xl p-4 shadow-sm border border-transparent dark:border-gray-800">
+            <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-4 shadow-sm border border-transparent dark:border-gray-800">
               <div className="text-amber-500 text-xs font-semibold">ควรเฝ้าระวัง (50-89)</div>
               <div className="text-2xl font-extrabold text-amber-500 mt-1">
                 {students.filter(s => {
@@ -892,7 +894,7 @@ export default function BehaviorScorePage() {
                 }).length} คน
               </div>
             </div>
-            <div className="bg-white dark:bg-[#1e1f24] rounded-2xl p-4 shadow-sm border border-transparent dark:border-gray-800">
+            <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-4 shadow-sm border border-transparent dark:border-gray-800">
               <div className="text-rose-500 text-xs font-semibold">คะแนนต่ำกว่าเกณฑ์ (&lt;50)</div>
               <div className="text-2xl font-extrabold text-rose-500 mt-1">
                 {students.filter(s => (s.behaviorScore ?? 100) < 50).length} คน
@@ -901,7 +903,7 @@ export default function BehaviorScorePage() {
           </div>
 
           {/* Filtering Controls */}
-          <div className="bg-white dark:bg-[#1e1f24] rounded-2xl p-5 shadow-sm border border-transparent dark:border-gray-800 space-y-4">
+          <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 shadow-sm border border-transparent dark:border-gray-800 space-y-4">
             <div className="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
               <Filter className="w-4 h-4 text-indigo-500" />
               ตัวกรองข้อมูล
@@ -917,7 +919,7 @@ export default function BehaviorScorePage() {
                     setSelectedClassLevel(e.target.value);
                     setSelectedRoom('');
                   }}
-                  className="w-full bg-slate-50 dark:bg-[#121318] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 text-gray-700 dark:text-gray-300"
+                  className="w-full bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 text-gray-700 dark:text-gray-300"
                 >
                   <option value="">ทุกระดับชั้น</option>
                   <option value="ม.ต้น">มัธยมศึกษาตอนต้น (ม.1-3)</option>
@@ -934,7 +936,7 @@ export default function BehaviorScorePage() {
                 <select
                   value={selectedRoom}
                   onChange={(e) => setSelectedRoom(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-[#121318] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 text-gray-700 dark:text-gray-300"
+                  className="w-full bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 text-gray-700 dark:text-gray-300"
                 >
                   <option value="">ทุกห้อง</option>
                   {[...Array(12)].map((_, i) => (
@@ -949,7 +951,7 @@ export default function BehaviorScorePage() {
                 <select
                   value={scoreFilter}
                   onChange={(e: any) => setScoreFilter(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-[#121318] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 text-gray-700 dark:text-gray-300"
+                  className="w-full bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 text-gray-700 dark:text-gray-300"
                 >
                   <option value="all">ทั้งหมด</option>
                   <option value="high">ดีเยี่ยม (90 คะแนนขึ้นไป)</option>
@@ -967,7 +969,7 @@ export default function BehaviorScorePage() {
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     placeholder="พิมพ์ชื่อ สกุล, รหัสนักเรียน หรือเลขที่..."
-                    className="w-full bg-slate-50 dark:bg-[#121318] border border-gray-200 dark:border-gray-800 rounded-xl pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-indigo-500 text-gray-700 dark:text-gray-300"
+                    className="w-full bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-800 rounded-xl pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-indigo-500 text-gray-700 dark:text-gray-300"
                   />
                   <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
                 </div>
@@ -976,10 +978,10 @@ export default function BehaviorScorePage() {
           </div>
 
           {/* Student Table Card */}
-          <div className="bg-white dark:bg-[#1e1f24] rounded-2xl shadow-sm border border-transparent dark:border-gray-800">
+          <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm border border-transparent dark:border-gray-800">
             
             {/* Header / Action Bar directly on the student table - Sticky below top navbar */}
-            <div className="sticky top-[60px] z-30 px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white/95 dark:bg-[#1e1f24]/95 backdrop-blur-md rounded-t-2xl shadow-sm transition-all">
+            <div className="sticky top-[60px] z-30 px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white/95 dark:bg-[#2a2b2f]/95 backdrop-blur-md rounded-t-2xl shadow-sm transition-all">
               {/* Left: Title & Room/Multi Selection Helpers */}
               <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                 <span className="text-sm sm:text-base font-extrabold text-gray-800 dark:text-gray-200 flex items-center gap-2">
@@ -1019,7 +1021,7 @@ export default function BehaviorScorePage() {
                         setSelectedStudentIds(sortedStudents.map(s => s.id));
                       }
                     }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-gray-300 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
                   >
                     {selectedStudentIds.length > 0 && selectedStudentIds.length === sortedStudents.length ? (
                       <>
@@ -1108,7 +1110,7 @@ export default function BehaviorScorePage() {
             {/* Table */}
             {isLoading ? (
               <table className="w-full text-left border-collapse">
-                <tbody className="divide-y divide-slate-100 dark:divide-gray-800 text-sm">
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-800 text-sm">
                   {[...Array(8)].map((_, i) => (
                     <tr key={`skeleton-${i}`}>
                       <td className="py-3 px-4 text-center"><div className="h-4 w-4 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
@@ -1132,7 +1134,7 @@ export default function BehaviorScorePage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-slate-50 dark:bg-[#15161b] text-gray-500 dark:text-gray-400 text-xs font-bold border-b border-gray-100 dark:border-gray-800">
+                    <tr className="bg-gray-50 dark:bg-[#1e1f21] text-gray-500 dark:text-gray-400 text-xs font-bold border-b border-gray-100 dark:border-gray-800">
                       <th className="py-3 px-4 w-12 text-center">
                         <input
                           type="checkbox"
@@ -1149,13 +1151,13 @@ export default function BehaviorScorePage() {
                       <th className="py-3 px-4 text-right pr-6">การดำเนินการ</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-gray-800 text-sm">
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-800 text-sm">
                     {currentStudents.map((student) => {
                       const isSelected = selectedStudentIds.includes(student.id);
                       return (
                         <tr
                           key={student.id}
-                          className={`hover:bg-slate-50/50 dark:hover:bg-[#202126]/30 transition-colors ${
+                          className={`hover:bg-gray-50/50 dark:hover:bg-[#2a2b2f]/30 transition-colors ${
                             isSelected ? 'bg-indigo-50/20 dark:bg-indigo-500/5' : ''
                           }`}
                         >
@@ -1294,10 +1296,10 @@ export default function BehaviorScorePage() {
       {/* -------------------- Adjust score Modal -------------------- */}
       {activeAdjustStudent && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white dark:bg-[#1e1f24] rounded-2xl max-w-md w-full max-h-[90vh] shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-800 transform transition-all flex flex-col">
+          <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl max-w-md w-full max-h-[90vh] shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-800 transform transition-all flex flex-col">
             
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-gray-800 flex justify-between items-center bg-slate-50 dark:bg-[#18191d] shrink-0">
+            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-[#1e1f21] shrink-0">
               <h3 className="font-extrabold text-gray-900 dark:text-white text-base">
                 {adjustType === 'add' ? 'บันทึกคะแนนเชิงบวก (เพิ่มคะแนน)' : 'บันทึกคะแนนเชิงลบ (หักคะแนน)'}
               </h3>
@@ -1313,7 +1315,7 @@ export default function BehaviorScorePage() {
             <form onSubmit={handleSubmitAdjust} className="p-6 space-y-4 overflow-y-auto">
               
               {/* Student Card Summary */}
-              <div className="bg-slate-50 dark:bg-[#141519] p-3.5 rounded-xl flex items-center gap-3">
+              <div className="bg-gray-50 dark:bg-[#1e1f21] p-3.5 rounded-xl flex items-center gap-3">
                 <ProfileAvatar
                   className="w-10 h-10 rounded-full"
                   src={activeAdjustStudent.profileImageUrl || `https://ui-avatars.com/api/?name=${activeAdjustStudent.firstName}+${activeAdjustStudent.lastName}&background=random`}
@@ -1337,7 +1339,7 @@ export default function BehaviorScorePage() {
                   className={`flex-1 py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
                     adjustType === 'deduct' 
                       ? 'bg-rose-50 border-rose-300 text-rose-700 dark:bg-rose-950/20 dark:border-rose-900/30 dark:text-rose-400 font-extrabold ring-1 ring-rose-400' 
-                      : 'bg-white border-gray-200 text-gray-500 dark:bg-[#1a1b1e] dark:border-gray-800'
+                      : 'bg-white border-gray-200 text-gray-500 dark:bg-[#1e1f21] dark:border-gray-800'
                   }`}
                 >
                   <Minus className="w-3.5 h-3.5" />
@@ -1349,7 +1351,7 @@ export default function BehaviorScorePage() {
                   className={`flex-1 py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
                     adjustType === 'add' 
                       ? 'bg-emerald-50 border-emerald-300 text-emerald-700 dark:bg-emerald-950/20 dark:border-emerald-900/30 dark:text-emerald-400 font-extrabold ring-1 ring-emerald-400' 
-                      : 'bg-white border-gray-200 text-gray-500 dark:bg-[#1a1b1e] dark:border-gray-800'
+                      : 'bg-white border-gray-200 text-gray-500 dark:bg-[#1e1f21] dark:border-gray-800'
                   }`}
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -1371,7 +1373,7 @@ export default function BehaviorScorePage() {
                           className={`flex-1 py-2 text-xs font-bold rounded-xl border transition-all ${
                             adjustPoints === pt 
                               ? 'bg-indigo-600 border-indigo-600 text-white' 
-                              : 'bg-slate-50 dark:bg-[#1a1b1e] border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'
+                              : 'bg-gray-50 dark:bg-[#1e1f21] border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'
                           }`}
                         >
                           {pt}
@@ -1380,7 +1382,7 @@ export default function BehaviorScorePage() {
                       <button
                         type="button"
                         onClick={() => setCustomPointsMode(true)}
-                        className="flex-1 py-2 text-xs font-bold rounded-xl border bg-slate-50 dark:bg-[#1a1b1e] border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-indigo-500"
+                        className="flex-1 py-2 text-xs font-bold rounded-xl border bg-gray-50 dark:bg-[#1e1f21] border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-indigo-500"
                       >
                         ระบุเอง
                       </button>
@@ -1394,12 +1396,12 @@ export default function BehaviorScorePage() {
                         placeholder="ระบุตัวเลขคะแนน..."
                         min="1"
                         autoFocus
-                        className="flex-1 bg-slate-50 dark:bg-[#1a1b1e] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                        className="flex-1 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                       />
                       <button
                         type="button"
                         onClick={() => setCustomPointsMode(false)}
-                        className="px-3 py-2 text-xs rounded-xl border border-gray-300 text-gray-550 hover:bg-slate-50"
+                        className="px-3 py-2 text-xs rounded-xl border border-gray-300 text-gray-550 hover:bg-gray-50"
                       >
                         ยกเลิก
                       </button>
@@ -1421,7 +1423,7 @@ export default function BehaviorScorePage() {
                       if (!customPointsMode) setAdjustPoints(rule.points);
                     }
                   }}
-                  className="w-full bg-slate-50 dark:bg-[#1a1b1e] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2.5 text-sm focus:outline-none text-gray-700 dark:text-gray-300"
+                  className="w-full bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2.5 text-sm focus:outline-none text-gray-700 dark:text-gray-300"
                 >
                   {activeAdjustRules.map(rule => (
                     <option key={rule.id} value={rule.id}>
@@ -1439,7 +1441,7 @@ export default function BehaviorScorePage() {
                   onChange={(e) => setAdjustNotes(e.target.value)}
                   placeholder="ตัวอย่าง: ทำเวรความสะอาดเรียบร้อยมาก, พิมพ์สาย 3 ครั้งติดต่อกัน, เข้าห้องเรียนสาย..."
                   rows={3}
-                  className="w-full bg-slate-50 dark:bg-[#1a1b1e] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-sm focus:outline-none text-gray-755 dark:text-gray-300 resize-none"
+                  className="w-full bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-sm focus:outline-none text-gray-755 dark:text-gray-300 resize-none"
                 />
               </div>
 
@@ -1448,7 +1450,7 @@ export default function BehaviorScorePage() {
                 <button
                   type="button"
                   onClick={() => setActiveAdjustStudent(null)}
-                  className="flex-1 py-2.5 border border-gray-300 text-gray-600 dark:text-gray-400 dark:border-gray-700 rounded-xl text-sm font-bold hover:bg-slate-50"
+                  className="flex-1 py-2.5 border border-gray-300 text-gray-600 dark:text-gray-400 dark:border-gray-700 rounded-xl text-sm font-bold hover:bg-gray-50"
                 >
                   ยกเลิก
                 </button>
@@ -1473,10 +1475,10 @@ export default function BehaviorScorePage() {
       {/* -------------------- Bulk Adjust Score Modal (รายห้อง / หลายคน) -------------------- */}
       {showBulkModal && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-[#1e1f24] rounded-2xl max-w-lg w-full max-h-[90vh] shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-800 transform transition-all flex flex-col">
+          <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl max-w-lg w-full max-h-[90vh] shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-800 transform transition-all flex flex-col">
             
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-gray-800 flex justify-between items-center bg-slate-50 dark:bg-[#18191d] shrink-0">
+            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-[#1e1f21] shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className={`p-2 rounded-xl ${bulkType === 'add' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400' : 'bg-rose-100 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400'}`}>
                   {bulkType === 'add' ? <Plus className="w-5 h-5" /> : <Minus className="w-5 h-5" />}
@@ -1532,7 +1534,7 @@ export default function BehaviorScorePage() {
                       {selectedStudents.map(student => (
                         <span
                           key={student.id}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white dark:bg-[#1e1f24] border border-indigo-200/60 dark:border-indigo-800 text-[11px] font-medium text-gray-700 dark:text-gray-300"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white dark:bg-[#2a2b2f] border border-indigo-200/60 dark:border-indigo-800 text-[11px] font-medium text-gray-700 dark:text-gray-300"
                         >
                           {student.studentNumber ? `เลขที่ ${student.studentNumber} ` : ''}
                           {`${student.title}${student.firstName} ${student.lastName}`}
@@ -1563,7 +1565,7 @@ export default function BehaviorScorePage() {
                     className={`py-2.5 px-3 rounded-xl border text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
                       bulkType === 'add' 
                         ? 'bg-emerald-50 border-emerald-400 text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-800 dark:text-emerald-300 ring-2 ring-emerald-500/30 shadow-sm' 
-                        : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50 dark:bg-[#1a1b1e] dark:border-gray-800 dark:hover:bg-zinc-800'
+                        : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50 dark:bg-[#1e1f21] dark:border-gray-800 dark:hover:bg-zinc-800'
                     }`}
                   >
                     <Plus className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
@@ -1576,7 +1578,7 @@ export default function BehaviorScorePage() {
                     className={`py-2.5 px-3 rounded-xl border text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
                       bulkType === 'deduct' 
                         ? 'bg-rose-50 border-rose-400 text-rose-700 dark:bg-rose-950/30 dark:border-rose-800 dark:text-rose-300 ring-2 ring-rose-500/30 shadow-sm' 
-                        : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50 dark:bg-[#1a1b1e] dark:border-gray-800 dark:hover:bg-zinc-800'
+                        : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50 dark:bg-[#1e1f21] dark:border-gray-800 dark:hover:bg-zinc-800'
                     }`}
                   >
                     <Minus className="w-4 h-4 text-rose-600 dark:text-rose-400" />
@@ -1600,7 +1602,7 @@ export default function BehaviorScorePage() {
                       if (!bulkCustomMode) setBulkPoints(rule.points);
                     }
                   }}
-                  className="w-full bg-slate-50 dark:bg-[#1a1b1e] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2.5 text-xs sm:text-sm focus:outline-none focus:border-indigo-500 text-gray-700 dark:text-gray-300"
+                  className="w-full bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2.5 text-xs sm:text-sm focus:outline-none focus:border-indigo-500 text-gray-700 dark:text-gray-300"
                 >
                   {activeBulkRules.map(rule => (
                     <option key={rule.id} value={rule.id}>
@@ -1626,7 +1628,7 @@ export default function BehaviorScorePage() {
                           className={`flex-1 py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
                             bulkPoints === pt 
                               ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm' 
-                              : 'bg-slate-50 dark:bg-[#1a1b1e] border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300'
+                              : 'bg-gray-50 dark:bg-[#1e1f21] border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300'
                           }`}
                         >
                           {pt}
@@ -1635,7 +1637,7 @@ export default function BehaviorScorePage() {
                       <button
                         type="button"
                         onClick={() => setBulkCustomMode(true)}
-                        className="flex-1 py-2 text-xs font-bold rounded-xl border bg-slate-50 dark:bg-[#1a1b1e] border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-indigo-500 cursor-pointer"
+                        className="flex-1 py-2 text-xs font-bold rounded-xl border bg-gray-50 dark:bg-[#1e1f21] border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-indigo-500 cursor-pointer"
                       >
                         ระบุเอง
                       </button>
@@ -1649,12 +1651,12 @@ export default function BehaviorScorePage() {
                         placeholder="ระบุตัวเลขคะแนน..."
                         min="1"
                         autoFocus
-                        className="flex-1 bg-slate-50 dark:bg-[#1a1b1e] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:border-indigo-500 text-gray-800 dark:text-gray-200"
+                        className="flex-1 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:border-indigo-500 text-gray-800 dark:text-gray-200"
                       />
                       <button
                         type="button"
                         onClick={() => setBulkCustomMode(false)}
-                        className="px-3 py-2 text-xs font-bold rounded-xl border border-gray-300 text-gray-500 hover:bg-slate-50 cursor-pointer"
+                        className="px-3 py-2 text-xs font-bold rounded-xl border border-gray-300 text-gray-500 hover:bg-gray-50 cursor-pointer"
                       >
                         ยกเลิก
                       </button>
@@ -1673,7 +1675,7 @@ export default function BehaviorScorePage() {
                   onChange={(e) => setBulkNotes(e.target.value)}
                   placeholder="เช่น ช่วยจัดเก็บกวาดขยะงานประจำปีการศึกษา, ไม่ส่งงานวิชาภาษาไทย, แต่งกายไม่ถูกระเบียบ..."
                   rows={3}
-                  className="w-full bg-slate-50 dark:bg-[#1a1b1e] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:border-indigo-500 text-gray-800 dark:text-gray-200 resize-none"
+                  className="w-full bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:border-indigo-500 text-gray-800 dark:text-gray-200 resize-none"
                 />
               </div>
 
@@ -1706,10 +1708,10 @@ export default function BehaviorScorePage() {
       {/* -------------------- View History Modal -------------------- */}
       {historyStudent && (
         <div className="fixed inset-0 z-[9999] bg-black/60 flex items-end sm:items-center justify-center px-4 pt-16 pb-4 backdrop-blur-sm">
-          <div className="bg-white dark:bg-[#1e1f24] rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-800 transform transition-all flex flex-col max-h-[calc(100vh-80px)]">
+          <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-800 transform transition-all flex flex-col max-h-[calc(100vh-80px)]">
 
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-gray-800 flex justify-between items-center bg-slate-50 dark:bg-[#18191d] shrink-0">
+            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-[#1e1f21] shrink-0">
               <h3 className="font-extrabold text-gray-900 dark:text-white text-base flex items-center gap-2">
                 <History className="w-5 h-5 text-indigo-500" />
                 ประวัติพฤติกรรมและความประพฤติ
@@ -1726,7 +1728,7 @@ export default function BehaviorScorePage() {
             <div className="px-4 py-3 overflow-y-auto flex-1 space-y-3">
 
               {/* Student Summary — compact inline */}
-              <div className="bg-slate-50 dark:bg-[#141519] px-3 py-2.5 rounded-xl flex items-center justify-between gap-3">
+              <div className="bg-gray-50 dark:bg-[#1e1f21] px-3 py-2.5 rounded-xl flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <ProfileAvatar
                     className="w-8 h-8 rounded-full shrink-0"
@@ -1753,7 +1755,7 @@ export default function BehaviorScorePage() {
                 <div className="flex items-center gap-2">
                   {/* Stats pills */}
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="text-[10px] font-bold text-gray-400 bg-slate-100 dark:bg-[#141519] px-2 py-1 rounded-lg">
+                    <span className="text-[10px] font-bold text-gray-400 bg-gray-100 dark:bg-[#1e1f21] px-2 py-1 rounded-lg">
                       {studentHistoryLogs.length} รายการ
                     </span>
                     <span className="text-[10px] font-black text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded-lg">
@@ -1765,7 +1767,7 @@ export default function BehaviorScorePage() {
                   </div>
 
                   {/* Divider */}
-                  <div className="w-px h-5 bg-slate-200 dark:bg-gray-700 shrink-0" />
+                  <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 shrink-0" />
 
                   {/* Type filter tabs */}
                   <div className="flex gap-1 overflow-x-auto">
@@ -1783,7 +1785,7 @@ export default function BehaviorScorePage() {
                         className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap flex items-center gap-1 ${
                           historyTypeFilter === tab.key
                             ? 'bg-indigo-600 text-white'
-                            : 'bg-slate-100 dark:bg-[#141519] text-gray-500 dark:text-gray-400'
+                            : 'bg-gray-100 dark:bg-[#1e1f21] text-gray-500 dark:text-gray-400'
                         }`}
                       >
                         {tab.label}
@@ -1810,7 +1812,7 @@ export default function BehaviorScorePage() {
                     : 'ไม่มีรายการในหมวดหมู่นี้'}
                 </div>
               ) : (
-                <div className="relative border-l border-slate-200 dark:border-gray-800 ml-3 space-y-2 pb-1">
+                <div className="relative border-l border-gray-200 dark:border-gray-800 ml-3 space-y-2 pb-1">
                   {pagedHistoryLogs.map((log) => {
                     const isDeduct = log.points < 0 || log.action === 'deduct';
                     const pointText = log.points > 0 ? `+${log.points}` : `${log.points}`;
@@ -1839,10 +1841,10 @@ export default function BehaviorScorePage() {
                     return (
                       <div key={log.id} className="relative pl-5">
                         {/* Dot */}
-                        <span className={`absolute -left-[5px] top-[7px] h-2.5 w-2.5 rounded-full ring-2 ring-white dark:ring-[#1e1f24] ${dotColor}`} />
+                        <span className={`absolute -left-[5px] top-[7px] h-2.5 w-2.5 rounded-full ring-2 ring-white dark:ring-[#2a2b2f] ${dotColor}`} />
 
                         {/* Compact card */}
-                        <div className="bg-slate-50 dark:bg-[#1a1b1f] px-2.5 py-2 rounded-lg border border-slate-100 dark:border-slate-800">
+                        <div className="bg-gray-50 dark:bg-[#1e1f21] px-2.5 py-2 rounded-lg border border-gray-100 dark:border-gray-800">
                           {/* Row 1: badge + title + points */}
                           <div className="flex items-center gap-1.5">
                             <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${typeBadgeClass}`}>
@@ -1884,7 +1886,7 @@ export default function BehaviorScorePage() {
             </div>
 
             {/* Modal Footer */}
-            <div className="px-4 py-3 bg-slate-50 dark:bg-[#18191d] border-t border-slate-100 dark:border-gray-800 flex items-center justify-between gap-3 shrink-0">
+            <div className="px-4 py-3 bg-gray-50 dark:bg-[#1e1f21] border-t border-gray-100 dark:border-gray-800 flex items-center justify-between gap-3 shrink-0">
               {historyTotalPages > 1 ? (
                 <div className="flex items-center gap-1">
                   <button

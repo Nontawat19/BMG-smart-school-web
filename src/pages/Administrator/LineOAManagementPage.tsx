@@ -7,6 +7,7 @@ import Swal from "sweetalert2";
 import { RootState } from "../../store";
 import Navbar from "../../components/Navbar/Navbar";
 import LeftSidebar from "../../components/Sidebar/LeftSidebar";
+import BackButton from "@/components/Shared/BackButton";
 import { MessageSquare, Save, Search, Key, CheckCircle, XCircle, X, ExternalLink, Bell } from "lucide-react";
 import ProfilePlaceholder from "../../assets/profile.png";
 import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
@@ -329,15 +330,20 @@ const LineOAManagementPage: React.FC = () => {
           }`}
       >
         <div className="max-w-7xl mx-auto">
-          <div className="mb-6">
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              <MessageSquare className="w-8 h-8 text-green-500" />
-              จัดการระบบแจ้งเตือน LINE OA
-            </h1>
-            <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
-              ตั้งค่า API Key ของ LINE Official Account สำหรับระบบส่วนกลางและรายชั้นเรียน
-            </p>
-          </div>
+          <header className="mb-6">
+            <div className="flex items-center gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f]">
+              <BackButton to="/academic/hub/settings" />
+              <div className="min-w-0">
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-2">
+                  <MessageSquare className="w-8 h-8 text-green-500" />
+                  จัดการระบบแจ้งเตือน LINE OA
+                </h1>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  ตั้งค่า API Key ของ LINE Official Account สำหรับระบบส่วนกลางและรายชั้นเรียน
+                </p>
+              </div>
+            </div>
+          </header>
 
           {/* School Selector */}
           <div className="bg-white dark:bg-[#2a2b2f] p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 mb-6">

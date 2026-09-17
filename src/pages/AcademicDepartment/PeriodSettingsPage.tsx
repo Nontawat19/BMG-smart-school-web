@@ -405,31 +405,32 @@ const PeriodSettingsPage: React.FC = () => {
 
   return (
     <MainLayout>
-      <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white transition-colors duration-300">
+      <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-h-screen bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white transition-colors duration-300">
         <div className="max-w-5xl mx-auto">
-          <div className="mb-6">
-            <BackButton to="/academic/hub/settings" />
-          </div>
-
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl text-indigo-600 dark:text-indigo-400">
-                  <Clock size={32} />
+          <header className="mb-8">
+            <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 flex-1 items-center gap-4">
+                <BackButton to="/academic/hub/settings" />
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl text-indigo-600 dark:text-indigo-400 shrink-0">
+                    <Clock size={32} />
+                  </div>
+                  <div className="min-w-0">
+                    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white">ตั้งค่าคาบเรียน</h1>
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">กำหนดช่วงเวลาของแต่ละคาบเรียนสำหรับโรงเรียนของคุณ</p>
+                  </div>
                 </div>
-                ตั้งค่าคาบเรียน
-              </h1>
-              <p className="text-gray-500 dark:text-gray-400 mt-2 text-lg">กำหนดช่วงเวลาของแต่ละคาบเรียนสำหรับโรงเรียนของคุณ</p>
+              </div>
+              <button
+                onClick={handleSave}
+                disabled={isSubmitting}
+                className="flex shrink-0 items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-lg shadow-indigo-200 dark:shadow-none disabled:bg-gray-400 disabled:cursor-not-allowed transform hover:-translate-y-0.5"
+              >
+                <Save size={20} />
+                {isSubmitting ? "กำลังบันทึก..." : "บันทึกการตั้งค่า"}
+              </button>
             </div>
-            <button
-              onClick={handleSave}
-              disabled={isSubmitting}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-lg shadow-indigo-200 dark:shadow-none disabled:bg-gray-400 disabled:cursor-not-allowed transform hover:-translate-y-0.5"
-            >
-              <Save size={20} />
-              {isSubmitting ? "กำลังบันทึก..." : "บันทึกการตั้งค่า"}
-            </button>
-          </div>
+          </header>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Left Column: Quick Settings & Info */}
@@ -450,7 +451,7 @@ const PeriodSettingsPage: React.FC = () => {
                       value={schoolStartTime}
                       onChange={(e) => setSchoolStartTime(e.target.value)}
                       onBlur={(e) => handleTimeBlur(e.target.value, setSchoolStartTime)}
-                      className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl px-4 py-3 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                      className="w-full bg-gray-50 dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-600 rounded-xl px-4 py-3 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                     />
                   </div>
 
@@ -460,7 +461,7 @@ const PeriodSettingsPage: React.FC = () => {
                       id="duration-preset"
                       value={durationPreset}
                       onChange={(e) => handlePresetChange(e.target.value)}
-                      className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl px-4 py-3 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all appearance-none cursor-pointer"
+                      className="w-full bg-gray-50 dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-600 rounded-xl px-4 py-3 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all appearance-none cursor-pointer"
                     >
                       <option value="custom">-- กำหนดเอง --</option>
                       <option value="40">40 นาที / คาบ</option>
@@ -489,7 +490,7 @@ const PeriodSettingsPage: React.FC = () => {
                 {isLoading ? (
                   <div className="space-y-4">
                     {[1, 2, 3, 4].map(i => (
-                      <div key={i} className="h-20 bg-gray-100 dark:bg-gray-800 rounded-xl animate-pulse"></div>
+                      <div key={i} className="h-20 bg-gray-100 dark:bg-[#2a2b2f] rounded-xl animate-pulse"></div>
                     ))}
                   </div>
                 ) : (
@@ -514,7 +515,7 @@ const PeriodSettingsPage: React.FC = () => {
                                 type="text"
                                 value={period.label}
                                 onChange={(e) => handlePeriodChange(index, 'label', e.target.value)}
-                                className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                                className="w-full bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                               />
                             </div>
 
@@ -526,7 +527,7 @@ const PeriodSettingsPage: React.FC = () => {
                                 value={period.startTime}
                                 onChange={(e) => handlePeriodChange(index, 'startTime', e.target.value)}
                                 onBlur={(e) => handlePeriodTimeBlur(index, 'startTime', e.target.value)}
-                                className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl px-2 py-2.5 text-sm text-center font-mono focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                                className="w-full bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-600 rounded-xl px-2 py-2.5 text-sm text-center font-mono focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                               />
                             </div>
 
@@ -538,7 +539,7 @@ const PeriodSettingsPage: React.FC = () => {
                                 value={period.endTime}
                                 onChange={(e) => handlePeriodChange(index, 'endTime', e.target.value)}
                                 onBlur={(e) => handlePeriodTimeBlur(index, 'endTime', e.target.value)}
-                                className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl px-2 py-2.5 text-sm text-center font-mono focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                                className="w-full bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-600 rounded-xl px-2 py-2.5 text-sm text-center font-mono focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                               />
                             </div>
 

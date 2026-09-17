@@ -103,7 +103,7 @@ const DEPARTMENT_BADGE_STYLES: Record<string, string> = {
   "งานบริหารบุคคล": "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
   "งานบริหารทั่วไป": "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300",
   "งานบริหารกิจการนักเรียน": "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300",
-  "ฝ่ายบริหาร": "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200",
+  "ฝ่ายบริหาร": "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200",
 };
 
 const DepartmentBadge: React.FC<{ department?: string }> = ({ department }) => {
@@ -1844,13 +1844,13 @@ const DocumentRegistryPage: React.FC = () => {
     <GeneralAffairsLayout>
       <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] transition-colors duration-300">
         {/* ── STICKY HEADER ── */}
-        <div className="sticky top-0 z-30 bg-white/95 dark:bg-[#111318]/95 backdrop-blur border-b border-slate-200 dark:border-white/5 px-4 py-3 flex items-center justify-between gap-4 shadow-sm">
+        <div className="sticky top-0 z-30 bg-white/95 dark:bg-[#2a2b2f]/95 backdrop-blur border-b border-gray-200 dark:border-white/5 px-4 py-3 flex items-center justify-between gap-4 shadow-sm">
           <div className="flex items-center gap-3 min-w-0">
             <BackButton to="/general-affairs/home" />
-            <div className="h-5 w-px bg-slate-200 dark:bg-white/10" />
+            <div className="h-5 w-px bg-gray-200 dark:bg-white/10" />
             <div className="min-w-0">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">งานธุรการ</p>
-              <h1 className="text-sm font-black text-slate-800 dark:text-white truncate">ทะเบียนหนังสือ</h1>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">งานธุรการ</p>
+              <h1 className="text-sm font-black text-gray-800 dark:text-white truncate">ทะเบียนหนังสือ</h1>
             </div>
           </div>
         </div>
@@ -1903,7 +1903,7 @@ const DocumentRegistryPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => navigate("/general-affairs")}
-                    className="inline-flex items-center gap-1.5 bg-[#ffc107] hover:bg-[#e0a800] text-slate-900 font-bold px-3.5 py-1.5 rounded text-xs sm:text-sm shadow-sm transition-transform active:scale-95 cursor-pointer"
+                    className="inline-flex items-center gap-1.5 bg-[#ffc107] hover:bg-[#e0a800] text-gray-900 font-bold px-3.5 py-1.5 rounded text-xs sm:text-sm shadow-sm transition-transform active:scale-95 cursor-pointer"
                   >
                     <FaPlus size={11} />
                     <span>ลงทะเบียนหนังสือรับ</span>
@@ -1939,7 +1939,7 @@ const DocumentRegistryPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={openCreateOrder}
-                    className="inline-flex items-center gap-1.5 bg-[#ffc107] hover:bg-[#e0a800] text-slate-900 font-bold px-3.5 py-1.5 rounded text-xs sm:text-sm shadow-sm transition-transform active:scale-95 cursor-pointer"
+                    className="inline-flex items-center gap-1.5 bg-[#ffc107] hover:bg-[#e0a800] text-gray-900 font-bold px-3.5 py-1.5 rounded text-xs sm:text-sm shadow-sm transition-transform active:scale-95 cursor-pointer"
                   >
                     <FaPlus size={11} />
                     <span>ลงทะเบียนคำสั่ง</span>
@@ -1975,7 +1975,7 @@ const DocumentRegistryPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={openCreateSent}
-                    className="inline-flex items-center gap-1.5 bg-[#ffc107] hover:bg-[#e0a800] text-slate-900 font-bold px-3.5 py-1.5 rounded text-xs sm:text-sm shadow-sm transition-transform active:scale-95 cursor-pointer"
+                    className="inline-flex items-center gap-1.5 bg-[#ffc107] hover:bg-[#e0a800] text-gray-900 font-bold px-3.5 py-1.5 rounded text-xs sm:text-sm shadow-sm transition-transform active:scale-95 cursor-pointer"
                   >
                     <FaPlus size={11} />
                     <span>ลงทะเบียนเลขหนังสือส่ง</span>
@@ -2011,7 +2011,7 @@ const DocumentRegistryPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={openForm}
-                    className="inline-flex items-center gap-1.5 bg-[#ffc107] hover:bg-[#e0a800] text-slate-900 font-bold px-3.5 py-1.5 rounded text-xs sm:text-sm shadow-sm transition-transform active:scale-95 cursor-pointer"
+                    className="inline-flex items-center gap-1.5 bg-[#ffc107] hover:bg-[#e0a800] text-gray-900 font-bold px-3.5 py-1.5 rounded text-xs sm:text-sm shadow-sm transition-transform active:scale-95 cursor-pointer"
                   >
                     <FaPlus size={11} />
                     <span>ลงทะเบียนประกาศ</span>
@@ -2034,7 +2034,7 @@ const DocumentRegistryPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={openForm}
-                    className="inline-flex items-center gap-1.5 bg-[#ffc107] hover:bg-[#e0a800] text-slate-900 font-bold px-3.5 py-1.5 rounded text-xs sm:text-sm shadow-sm transition-transform active:scale-95 cursor-pointer"
+                    className="inline-flex items-center gap-1.5 bg-[#ffc107] hover:bg-[#e0a800] text-gray-900 font-bold px-3.5 py-1.5 rounded text-xs sm:text-sm shadow-sm transition-transform active:scale-95 cursor-pointer"
                   >
                     <FaPlus size={11} />
                     <span>ลงทะเบียนหนังสือรับรอง</span>
@@ -2057,7 +2057,7 @@ const DocumentRegistryPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={openCreateMemo}
-                    className="inline-flex items-center gap-1.5 bg-[#ffc107] hover:bg-[#e0a800] text-slate-900 font-bold px-3.5 py-1.5 rounded text-xs sm:text-sm shadow-sm transition-transform active:scale-95 cursor-pointer"
+                    className="inline-flex items-center gap-1.5 bg-[#ffc107] hover:bg-[#e0a800] text-gray-900 font-bold px-3.5 py-1.5 rounded text-xs sm:text-sm shadow-sm transition-transform active:scale-95 cursor-pointer"
                   >
                     <FaPlus size={11} />
                     <span>ลงทะเบียนบันทึกข้อความ</span>
@@ -2093,7 +2093,7 @@ const DocumentRegistryPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={openCreateHonorCert}
-                    className="inline-flex items-center gap-1.5 bg-[#ffc107] hover:bg-[#e0a800] text-slate-900 font-bold px-3.5 py-1.5 rounded text-xs sm:text-sm shadow-sm transition-transform active:scale-95 cursor-pointer"
+                    className="inline-flex items-center gap-1.5 bg-[#ffc107] hover:bg-[#e0a800] text-gray-900 font-bold px-3.5 py-1.5 rounded text-xs sm:text-sm shadow-sm transition-transform active:scale-95 cursor-pointer"
                   >
                     <FaPlus size={11} />
                     <span>ลงทะเบียนเลขเกียรติบัตร</span>
@@ -3008,7 +3008,7 @@ const DocumentRegistryPage: React.FC = () => {
                               <button
                                 type="button"
                                 onClick={() => openEditMemo(row)}
-                                className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-amber-400 hover:bg-amber-500 text-slate-900 shadow-sm transition-transform active:scale-90 cursor-pointer"
+                                className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-amber-400 hover:bg-amber-500 text-gray-900 shadow-sm transition-transform active:scale-90 cursor-pointer"
                                 title="แก้ไขบันทึกข้อความ"
                               >
                                 <FaEdit size={13} />
@@ -4194,7 +4194,7 @@ const DocumentRegistryPage: React.FC = () => {
                     type="text"
                     disabled
                     value={honorCertFormId}
-                    className="w-full px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 outline-none select-all"
+                    className="w-full px-3 py-2 rounded-lg bg-gray-100 dark:bg-[#2a2b2f] border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 outline-none select-all"
                   />
                   <span className="text-[11px] text-gray-400 mt-0.5 block">
                     * รหัสระบุรายการอ้างอิงอัตโนมัติ

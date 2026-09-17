@@ -430,19 +430,19 @@ const SubstituteSchedulePrintPage: React.FC = () => {
 
   return (
     <MainLayout>
-      <div className="px-3 sm:px-4 md:px-6 py-4 sm:py-6 min-h-screen bg-gray-50 dark:bg-[#1c1c24]">
+      <div className="px-3 sm:px-4 md:px-6 py-4 sm:py-6 min-h-screen bg-gray-50 dark:bg-[#1e1f21]">
         <div className="max-w-5xl mx-auto space-y-5">
 
           {/* ─── Page Header ─── */}
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <header className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] sm:flex-row sm:items-center">
             <BackButton to="/academic/hub/scheduling" />
             <div className="flex items-center gap-3 flex-1 min-w-0">
               <div className="w-10 h-10 rounded-xl bg-teal-100 dark:bg-teal-500/20 flex items-center justify-center flex-shrink-0">
                 <CalendarDays size={20} className="text-teal-600 dark:text-teal-400" />
               </div>
               <div className="min-w-0">
-                <h1 className="text-xl font-bold text-gray-900 dark:text-white leading-tight">ตารางสอนแทน</h1>
-                <p className="text-xs text-gray-500 dark:text-gray-400">รายงานการจัดสอนแทนรายวัน แยกตามครูผู้ลา</p>
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white">ตารางสอนแทน</h1>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">รายงานการจัดสอนแทนรายวัน แยกตามครูผู้ลา</p>
               </div>
             </div>
             <button
@@ -453,7 +453,7 @@ const SubstituteSchedulePrintPage: React.FC = () => {
               <Printer size={15} />
               ส่งออก PDF
             </button>
-          </div>
+          </header>
 
           {/* ─── Filter Card ─── */}
           <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm border border-gray-100 dark:border-white/5 p-4">

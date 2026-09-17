@@ -54,8 +54,8 @@ const statusColor: Record<AttendanceStatus, string> = {
     present: 'text-green-600 dark:text-green-400',
     late: 'text-amber-600 dark:text-amber-400',
     leave: 'text-sky-600 dark:text-sky-400',
-    absent: 'text-slate-900 dark:text-slate-100',
-    escape: 'text-slate-900 dark:text-slate-100',
+    absent: 'text-gray-900 dark:text-gray-100',
+    escape: 'text-gray-900 dark:text-gray-100',
 };
 
 const pdfStatusText: Record<AttendanceStatus, string> = {
@@ -652,13 +652,13 @@ const TimeRangeAttendanceSummaryPage: React.FC = () => {
 
     return (
         <MainLayout>
-            <div className="min-h-screen bg-[#eef0f4] px-2 py-4 text-slate-900 transition-colors dark:bg-[#0f1117] dark:text-slate-100 print:bg-white print:text-black">
+            <div className="min-h-screen bg-gray-50 px-2 py-4 text-gray-900 transition-colors dark:bg-[#1e1f21] dark:text-gray-100 print:bg-white print:text-black">
                 <div className="mx-auto max-w-[1120px]">
-                    <div className="mb-4 flex flex-col gap-4 rounded-2xl border border-[#d6dbe0] bg-white p-5 shadow-sm transition-colors dark:border-slate-700 dark:bg-[#171922] print:hidden lg:flex-row lg:items-center lg:justify-between">
+                    <div className="mb-4 flex flex-col gap-4 rounded-2xl border border-[#d6dbe0] bg-white p-5 shadow-sm transition-colors dark:border-gray-700 dark:bg-[#2a2b2f] print:hidden lg:flex-row lg:items-center lg:justify-between">
                         <div className="flex min-w-0 flex-1 items-center gap-4">
                             <BackButton to="/academic/hub/students" />
                             <div className="min-w-0">
-                                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">รายงานเช็คมาเรียนรายห้องตามช่วงเวลา</h1>
+                                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white">รายงานเช็คมาเรียนรายห้องตามช่วงเวลา</h1>
                                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">กลับไปหน้าข้อมูลนักเรียน</p>
                             </div>
                         </div>
@@ -673,14 +673,14 @@ const TimeRangeAttendanceSummaryPage: React.FC = () => {
                         </button>
                     </div>
 
-                    <div className="rounded-sm border border-[#d6dbe0] bg-white shadow-sm transition-colors dark:border-slate-700 dark:bg-[#171922] print:border-none print:shadow-none">
+                    <div className="rounded-sm border border-[#d6dbe0] bg-white shadow-sm transition-colors dark:border-gray-700 dark:bg-[#2a2b2f] print:border-none print:shadow-none">
                         <div className="grid grid-cols-1 gap-x-12 gap-y-3 px-7 py-4 md:grid-cols-2 print:hidden">
                             <label className="block">
                                 <span className="mb-1 block text-[13px] font-semibold">โรงเรียน</span>
                                 <select
                                     value={schoolId || ''}
                                     disabled
-                                    className="h-8 w-full rounded border border-[#d9dee3] bg-white px-3 text-[13px] text-slate-900 outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                                    className="h-8 w-full rounded border border-[#d9dee3] bg-white px-3 text-[13px] text-gray-900 outline-none dark:border-gray-600 dark:bg-[#1e1f21] dark:text-gray-100"
                                 >
                                     <option value={schoolId || ''}>{schoolLabel}</option>
                                 </select>
@@ -695,7 +695,7 @@ const TimeRangeAttendanceSummaryPage: React.FC = () => {
                                         setSemester(nextSemester);
                                         setAcademicYear(nextYear);
                                     }}
-                                    className="h-8 w-full rounded border border-[#d9dee3] bg-white px-3 text-[13px] text-slate-900 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                                    className="h-8 w-full rounded border border-[#d9dee3] bg-white px-3 text-[13px] text-gray-900 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 dark:border-gray-600 dark:bg-[#1e1f21] dark:text-gray-100"
                                 >
                                     {termOptions.map(option => (
                                         <option key={option.value} value={option.value}>{option.label}</option>
@@ -712,7 +712,7 @@ const TimeRangeAttendanceSummaryPage: React.FC = () => {
                                             setSelectedClassLevel(event.target.value);
                                             setSelectedRoom('');
                                         }}
-                                        className="h-8 w-full rounded border border-[#d9dee3] bg-white px-3 text-[13px] text-slate-900 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                                        className="h-8 w-full rounded border border-[#d9dee3] bg-white px-3 text-[13px] text-gray-900 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 dark:border-gray-600 dark:bg-[#1e1f21] dark:text-gray-100"
                                     >
                                         {availableLevels.map((level) => (
                                             <option key={level} value={level}>{`${schoolSettings.schoolName || 'โรงเรียน'}-${getFullClassLabel(level)}`}</option>
@@ -722,7 +722,7 @@ const TimeRangeAttendanceSummaryPage: React.FC = () => {
                                     <select
                                         value={selectedRoom}
                                         onChange={(event) => setSelectedRoom(event.target.value)}
-                                        className="h-8 w-full rounded border border-[#d9dee3] bg-white px-3 text-[13px] text-slate-900 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                                        className="h-8 w-full rounded border border-[#d9dee3] bg-white px-3 text-[13px] text-gray-900 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 dark:border-gray-600 dark:bg-[#1e1f21] dark:text-gray-100"
                                     >
                                         <option value="">ทุกห้อง</option>
                                         {roomOptions.map(room => (
@@ -738,9 +738,9 @@ const TimeRangeAttendanceSummaryPage: React.FC = () => {
                                     type="date"
                                     value={startDate}
                                     onChange={(event) => setStartDate(event.target.value)}
-                                    className="h-[31px] w-full rounded border border-[#cfd6dd] bg-white px-3 text-[13px] text-slate-700 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                                    className="h-[31px] w-full rounded border border-[#cfd6dd] bg-white px-3 text-[13px] text-gray-700 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 dark:border-gray-600 dark:bg-[#1e1f21] dark:text-gray-100"
                                 />
-                                <div className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">{formatSelectedDateThai(startDate)}</div>
+                                <div className="mt-1 text-[12px] text-gray-500 dark:text-gray-400">{formatSelectedDateThai(startDate)}</div>
                             </label>
 
                             <label className="block">
@@ -751,9 +751,9 @@ const TimeRangeAttendanceSummaryPage: React.FC = () => {
                                             type="date"
                                             value={endDate}
                                             onChange={(event) => setEndDate(event.target.value)}
-                                            className="h-[31px] w-full rounded border border-[#cfd6dd] bg-white px-3 text-[13px] text-slate-700 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                                            className="h-[31px] w-full rounded border border-[#cfd6dd] bg-white px-3 text-[13px] text-gray-700 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 dark:border-gray-600 dark:bg-[#1e1f21] dark:text-gray-100"
                                         />
-                                        <div className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">{formatSelectedDateThai(endDate)}</div>
+                                        <div className="mt-1 text-[12px] text-gray-500 dark:text-gray-400">{formatSelectedDateThai(endDate)}</div>
                                     </div>
                                     <button
                                         type="button"
@@ -775,30 +775,30 @@ const TimeRangeAttendanceSummaryPage: React.FC = () => {
                                 <div className="text-sm">{selectedClassLabel} วันที่ {formatSelectedDateThai(startDate)} ถึง {formatSelectedDateThai(endDate)}</div>
                             </div>
 
-                            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[12px] text-slate-600 dark:text-slate-400 print:hidden">
+                            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[12px] text-gray-600 dark:text-gray-400 print:hidden">
                                 <span>พบข้อมูลนักเรียน {students.length} คน จำนวนวันเรียน {dates.length} วัน</span>
                                 <span>
                                     มา {reportTotals.present} | สาย {reportTotals.late} | ขาด {reportTotals.absent} | ลา {reportTotals.leave}
                                 </span>
                             </div>
 
-                            <div className="overflow-x-auto border border-[#d6dbe0] dark:border-slate-700 print:overflow-visible">
+                            <div className="overflow-x-auto border border-[#d6dbe0] dark:border-gray-700 print:overflow-visible">
                                 <table className="w-full min-w-[980px] border-collapse text-[12px] print:min-w-0 print:text-[10px]">
                                     <thead>
-                                        <tr className="bg-[#e9eef2] text-slate-800 dark:bg-slate-800 dark:text-slate-100">
-                                            <th className="h-[96px] w-[46px] border-r border-[#d6dbe0] px-2 py-3 text-center align-middle font-semibold dark:border-slate-700">#</th>
-                                            <th className="h-[96px] w-[90px] border-r border-[#d6dbe0] px-2 py-3 text-center align-middle font-semibold leading-tight dark:border-slate-700">รหัส<br />นักเรียน</th>
-                                            <th className="h-[96px] min-w-[220px] border-r border-[#d6dbe0] px-3 py-3 text-center align-middle font-semibold dark:border-slate-700">ชื่อ-นามสกุล</th>
-                                            <th className="h-[96px] w-[160px] border-r border-[#d6dbe0] px-3 py-3 text-center align-middle font-semibold dark:border-slate-700">ชั้น</th>
+                                        <tr className="bg-[#e9eef2] text-gray-800 dark:bg-[#2a2b2f] dark:text-gray-100">
+                                            <th className="h-[96px] w-[46px] border-r border-[#d6dbe0] px-2 py-3 text-center align-middle font-semibold dark:border-gray-700">#</th>
+                                            <th className="h-[96px] w-[90px] border-r border-[#d6dbe0] px-2 py-3 text-center align-middle font-semibold leading-tight dark:border-gray-700">รหัส<br />นักเรียน</th>
+                                            <th className="h-[96px] min-w-[220px] border-r border-[#d6dbe0] px-3 py-3 text-center align-middle font-semibold dark:border-gray-700">ชื่อ-นามสกุล</th>
+                                            <th className="h-[96px] w-[160px] border-r border-[#d6dbe0] px-3 py-3 text-center align-middle font-semibold dark:border-gray-700">ชั้น</th>
                                             {dates.map(day => (
-                                                <th key={day.iso} className="h-[96px] w-[34px] border-r border-[#d6dbe0] p-0 text-center align-middle font-semibold dark:border-slate-700">
+                                                <th key={day.iso} className="h-[96px] w-[34px] border-r border-[#d6dbe0] p-0 text-center align-middle font-semibold dark:border-gray-700">
                                                     <span className="mx-auto flex h-[92px] w-[32px] items-center justify-center">
                                                         <span className="block origin-center -rotate-90 whitespace-nowrap text-[11px] leading-none print:text-[8px]">{day.label}</span>
                                                     </span>
                                                 </th>
                                             ))}
                                             {summaryLabels.map((label, labelIndex) => (
-                                                <th key={label} className={`h-[96px] w-[42px] p-0 text-center align-middle font-semibold ${labelIndex < 4 ? 'border-r border-[#d6dbe0] dark:border-slate-700' : ''}`}>
+                                                <th key={label} className={`h-[96px] w-[42px] p-0 text-center align-middle font-semibold ${labelIndex < 4 ? 'border-r border-[#d6dbe0] dark:border-gray-700' : ''}`}>
                                                     <span className="mx-auto flex h-[92px] w-[40px] items-center justify-center">
                                                         <span className="block origin-center -rotate-90 whitespace-nowrap text-[12px] leading-none print:text-[8px]">{label}</span>
                                                     </span>
@@ -819,7 +819,7 @@ const TimeRangeAttendanceSummaryPage: React.FC = () => {
                                             </tr>
                                         ) : students.length === 0 ? (
                                             <tr>
-                                                <td colSpan={9 + dates.length} className="px-3 py-12 text-center text-[13px] text-slate-600 dark:text-slate-400">
+                                                <td colSpan={9 + dates.length} className="px-3 py-12 text-center text-[13px] text-gray-600 dark:text-gray-400">
                                                     ไม่พบข้อมูลการมาเรียน
                                                 </td>
                                             </tr>
@@ -827,23 +827,23 @@ const TimeRangeAttendanceSummaryPage: React.FC = () => {
                                             students.map((student, index) => {
                                                 const stats = getStats(student.id);
                                                 return (
-                                                    <tr key={student.id} className="border-t border-[#d6dbe0] bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-[#171922] dark:hover:bg-slate-800/60">
-                                                        <td className="border-r border-[#d6dbe0] px-2 py-2 text-center font-semibold dark:border-slate-700">{index + 1}</td>
-                                                        <td className="border-r border-[#d6dbe0] px-2 py-2 text-center dark:border-slate-700">{student.studentCode || '-'}</td>
-                                                        <td className="border-r border-[#d6dbe0] px-3 py-2 dark:border-slate-700">{`${student.prefix || ''}${student.firstName} ${student.lastName}`.trim() || '-'}</td>
-                                                        <td className="border-r border-[#d6dbe0] px-3 py-2 text-center font-medium dark:border-slate-700">{getFullClassLabel(selectedClassLevel, selectedRoom || student.room)}</td>
+                                                    <tr key={student.id} className="border-t border-[#d6dbe0] bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-[#2a2b2f] dark:hover:bg-gray-800/60">
+                                                        <td className="border-r border-[#d6dbe0] px-2 py-2 text-center font-semibold dark:border-gray-700">{index + 1}</td>
+                                                        <td className="border-r border-[#d6dbe0] px-2 py-2 text-center dark:border-gray-700">{student.studentCode || '-'}</td>
+                                                        <td className="border-r border-[#d6dbe0] px-3 py-2 dark:border-gray-700">{`${student.prefix || ''}${student.firstName} ${student.lastName}`.trim() || '-'}</td>
+                                                        <td className="border-r border-[#d6dbe0] px-3 py-2 text-center font-medium dark:border-gray-700">{getFullClassLabel(selectedClassLevel, selectedRoom || student.room)}</td>
                                                         {dates.map(day => {
                                                             const status = attendanceMap[student.id]?.[day.iso];
                                                             return (
-                                                                <td key={day.iso} className={`border-r border-[#d6dbe0] px-1 py-2 text-center font-black dark:border-slate-700 ${status ? statusColor[status] : 'text-slate-300 dark:text-slate-600'}`}>
+                                                                <td key={day.iso} className={`border-r border-[#d6dbe0] px-1 py-2 text-center font-black dark:border-gray-700 ${status ? statusColor[status] : 'text-gray-300 dark:text-gray-600'}`}>
                                                                     {status ? statusText[status] : '-'}
                                                                 </td>
                                                             );
                                                         })}
-                                                        <td className="border-r border-[#d6dbe0] px-1 py-2 text-center dark:border-slate-700">{stats.present}</td>
-                                                        <td className="border-r border-[#d6dbe0] px-1 py-2 text-center dark:border-slate-700">{stats.late}</td>
-                                                        <td className="border-r border-[#d6dbe0] px-1 py-2 text-center dark:border-slate-700">{stats.absent}</td>
-                                                        <td className="border-r border-[#d6dbe0] px-1 py-2 text-center dark:border-slate-700">{stats.leave}</td>
+                                                        <td className="border-r border-[#d6dbe0] px-1 py-2 text-center dark:border-gray-700">{stats.present}</td>
+                                                        <td className="border-r border-[#d6dbe0] px-1 py-2 text-center dark:border-gray-700">{stats.late}</td>
+                                                        <td className="border-r border-[#d6dbe0] px-1 py-2 text-center dark:border-gray-700">{stats.absent}</td>
+                                                        <td className="border-r border-[#d6dbe0] px-1 py-2 text-center dark:border-gray-700">{stats.leave}</td>
                                                         <td className="px-1 py-2 text-center">{stats.total}</td>
                                                     </tr>
                                                 );
@@ -863,11 +863,11 @@ const TimeRangeAttendanceSummaryPage: React.FC = () => {
                     onClick={() => setShowPdfPreview(false)}
                 >
                     <div
-                        className="flex h-[calc(100vh-100px)] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#171922]"
+                        className="flex h-[calc(100vh-100px)] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#2a2b2f]"
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <div className="flex items-center justify-between border-b border-[#d6dbe0] px-5 py-4 dark:border-slate-700">
-                            <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                        <div className="flex items-center justify-between border-b border-[#d6dbe0] px-5 py-4 dark:border-gray-700">
+                            <h2 className="text-base font-bold text-gray-900 dark:text-white">
                                 ตัวอย่างเอกสาร — รายงานเช็คมาเรียนรายห้อง
                             </h2>
                             <div className="flex items-center gap-2">
@@ -883,14 +883,14 @@ const TimeRangeAttendanceSummaryPage: React.FC = () => {
                                 <button
                                     type="button"
                                     onClick={() => setShowPdfPreview(false)}
-                                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+                                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
                                     title="ปิด"
                                 >
                                     <X size={18} />
                                 </button>
                             </div>
                         </div>
-                        <div className="flex-1 overflow-hidden rounded-b-2xl bg-slate-100 dark:bg-slate-900">
+                        <div className="flex-1 overflow-hidden rounded-b-2xl bg-gray-100 dark:bg-[#1e1f21]">
                             <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
                                 {buildTimeRangeAttendancePdfDocument()}
                             </PDFViewer>

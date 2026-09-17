@@ -312,7 +312,7 @@ const ClubMemberManagementPage: React.FC = () => {
     menuPortal: (base: any) => ({ ...base, zIndex: 9999 }),
     menu: (base: any) => ({
       ...base,
-      backgroundColor: isDarkMode ? '#1a1b1e' : 'white',
+      backgroundColor: isDarkMode ? '#1e1f21' : 'white',
       border: isDarkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
       borderRadius: '16px',
       overflow: 'hidden',
@@ -618,21 +618,21 @@ const ClubMemberManagementPage: React.FC = () => {
     <MainLayout>
       <div className="p-4 sm:p-8 w-full h-[calc(100vh-60px)] flex flex-col overflow-hidden text-gray-900 dark:text-white">
 
-        <section className="bg-white/50 dark:bg-[#161a27]/50 backdrop-blur-xl border border-slate-200 dark:border-white/5 rounded-[24px] p-2.5 shadow-sm mb-4 flex items-center justify-between gap-4">
+        <header className="rounded-2xl border border-gray-100 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] mb-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <BackButton to="/academic/hub/activities" />
-            <div className="flex items-center gap-2 pr-4 border-r border-slate-200 dark:border-white/10">
+            <div className="flex items-center gap-2 pr-4 border-r border-gray-200 dark:border-gray-700">
               <div className="p-1.5 bg-violet-600 rounded-lg text-white shadow-sm">
                 <Users size={16} />
               </div>
-              <h1 className="text-sm font-black tracking-tight text-slate-900 dark:text-white whitespace-nowrap">
+              <h1 className="text-sm font-bold tracking-tight text-gray-900 dark:text-white whitespace-nowrap">
                 จัดการสมาชิกชุมนุม
               </h1>
             </div>
             
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2 min-w-[260px]">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">ชุมนุม:</span>
+                <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">ชุมนุม:</span>
                 <Select
                   options={myClubs.map(c => ({ value: c.id, label: c.name, club: c }))}
                   value={selectedClub ? { value: selectedClub.id, label: selectedClub.name } : null}
@@ -667,21 +667,21 @@ const ClubMemberManagementPage: React.FC = () => {
               </span>
             </div>
           </div>
-        </section>
+        </header>
 
         {loading ? (
           <div className="grid grid-cols-2 gap-4 h-full flex-1">
             <SkeletonLoader height="100%" borderRadius="24px" /><SkeletonLoader height="100%" borderRadius="24px" />
           </div>
         ) : !selectedClub ? (
-          <div className="flex-1 flex items-center justify-center bg-white/50 dark:bg-[#161a27]/50 backdrop-blur-xl rounded-[32px] border-2 border-dashed border-slate-200 dark:border-white/5 m-4">
+          <div className="flex-1 flex items-center justify-center bg-white/50 dark:bg-[#2a2b2f]/50 backdrop-blur-xl rounded-[32px] border-2 border-dashed border-gray-200 dark:border-white/5 m-4">
             <div className="text-center space-y-4">
               <div className="w-24 h-24 bg-violet-500/10 rounded-3xl flex items-center justify-center mx-auto text-violet-500 animate-pulse">
                 <Users size={48} strokeWidth={1.5} />
               </div>
               <div className="space-y-2">
-                <h3 className="text-xl font-black text-slate-800 dark:text-white">กรุณาเลือกชุมนุม</h3>
-                <p className="text-slate-500 dark:text-slate-400 max-w-xs mx-auto text-sm font-medium">เลือกชุมนุมจากเมนูด้านบนเพื่อเริ่มต้นจัดการสมาชิก</p>
+                <h3 className="text-xl font-black text-gray-800 dark:text-white">กรุณาเลือกชุมนุม</h3>
+                <p className="text-gray-500 dark:text-gray-400 max-w-xs mx-auto text-sm font-medium">เลือกชุมนุมจากเมนูด้านบนเพื่อเริ่มต้นจัดการสมาชิก</p>
               </div>
             </div>
           </div>
@@ -702,7 +702,7 @@ const ClubMemberManagementPage: React.FC = () => {
                   {requests.map(req => (
                     <div key={req.id} className="flex-shrink-0 bg-white dark:bg-gray-900 border border-amber-500/20 rounded-xl p-2.5 flex items-center gap-4 shadow-sm hover:border-amber-500/40 transition-colors">
                       <div className="min-w-[120px]">
-                        <p className="text-[11px] font-black text-slate-800 dark:text-white leading-none truncate">{req.studentName}</p>
+                        <p className="text-[11px] font-black text-gray-800 dark:text-white leading-none truncate">{req.studentName}</p>
                         <p className="text-[9px] font-bold text-amber-600/80 mt-1 truncate">
                           {myClubs.some(c => c.id === req.currentClubId) ? `ย้ายออกจาก: ${req.currentClubName}` : `ขอเข้า: ${req.targetClubName}`}
                         </p>
@@ -718,14 +718,14 @@ const ClubMemberManagementPage: React.FC = () => {
             )}
             <div className="flex-1 flex flex-col lg:flex-row gap-4 overflow-hidden min-h-0">
               {/* STUDENT LIST (SOURCE POOL) - LEFT */}
-              <div className="flex-[0.9] flex flex-col bg-white dark:bg-[#161a27] rounded-[24px] border border-slate-200 dark:border-white/5 overflow-hidden shadow-sm">
-                <div className="px-6 py-4 border-b border-slate-100 dark:border-white/5 space-y-3">
+              <div className="flex-[0.9] flex flex-col bg-white dark:bg-[#2a2b2f] rounded-[24px] border border-gray-200 dark:border-white/5 overflow-hidden shadow-sm">
+                <div className="px-6 py-4 border-b border-gray-100 dark:border-white/5 space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <div className="p-2 bg-emerald-600 rounded-xl text-white shadow-lg shadow-emerald-600/20"><UserPlus size={16} /></div>
                       <div>
-                        <h3 className="text-xs font-black text-slate-900 dark:text-white leading-none">รายชื่อนักเรียน</h3>
-                        <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-wider">
+                        <h3 className="text-xs font-black text-gray-900 dark:text-white leading-none">รายชื่อนักเรียน</h3>
+                        <p className="text-[10px] text-gray-400 font-bold mt-1 uppercase tracking-wider">
                           เลือกจากชั้น {selectedClassLevel === 'all' ? 'ทุกชั้น' : thaiFormatClass(selectedClassLevel)} / {selectedRoom === 'all' ? 'ทุกห้อง' : `ห้อง ${selectedRoom}`}
                         </p>
                       </div>
@@ -783,20 +783,20 @@ const ClubMemberManagementPage: React.FC = () => {
                       />
                     </div>
                     <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={13} />
                       <input 
                         type="text" 
                         placeholder="ค้นหาชื่อ หรือเลขประจำตัว..." 
                         value={studentSearchTerm} 
                         onChange={(e) => setStudentSearchTerm(e.target.value)} 
-                        className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-[#1a1b1e] border border-slate-100 dark:border-white/10 rounded-xl text-[11px] font-bold dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 dark:focus:border-emerald-500 transition-all outline-none" 
+                        className="w-full pl-9 pr-3 py-2 bg-gray-50 dark:bg-[#1e1f21] border border-gray-100 dark:border-white/10 rounded-xl text-[11px] font-bold dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 dark:focus:border-emerald-500 transition-all outline-none" 
                       />
                     </div>
                   </div>
                 </div>
 
                 {/* TABLE HEADER */}
-                <div className="px-6 py-2 bg-slate-50 dark:bg-white/5 border-b border-slate-100 dark:border-white/5 grid grid-cols-[28px,1fr,110px,55px,36px] items-center text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                <div className="px-6 py-2 bg-gray-50 dark:bg-white/5 border-b border-gray-100 dark:border-white/5 grid grid-cols-[28px,1fr,110px,55px,36px] items-center text-[9px] font-black text-gray-400 uppercase tracking-widest">
                   <div className="flex justify-center">
                     <input 
                       type="checkbox" 
@@ -810,7 +810,7 @@ const ClubMemberManagementPage: React.FC = () => {
                           setSelectedStudentIds([]);
                         }
                       }}
-                      className="w-3 h-3 rounded border-slate-300 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
+                      className="w-3 h-3 rounded border-gray-300 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
                     />
                   </div>
                   <span>รหัส / รายชื่อนักเรียน</span>
@@ -827,7 +827,7 @@ const ClubMemberManagementPage: React.FC = () => {
                       <SkeletonLoader height="50px" borderRadius="12px" />
                     </div>
                   ) : filteredAvailableStudents.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-2 opacity-40">
+                    <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-2 opacity-40">
                       <Search size={24} strokeWidth={1} />
                       <p className="text-[9px] font-black uppercase tracking-widest">ไม่พบนักเรียน</p>
                     </div>
@@ -844,7 +844,7 @@ const ClubMemberManagementPage: React.FC = () => {
                         className={`group grid grid-cols-[28px,1fr,110px,55px,36px] items-center py-1.5 px-2.5 rounded-xl transition-all border mb-1.5 cursor-pointer ${
                           selectedStudentIds.includes(student.id) 
                             ? 'bg-emerald-500/10 border-emerald-500/20' 
-                            : 'bg-transparent border-transparent hover:bg-slate-50 dark:hover:bg-white/5'
+                            : 'bg-transparent border-transparent hover:bg-gray-50 dark:hover:bg-white/5'
                         }`}
                       >
                         <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
@@ -857,20 +857,20 @@ const ClubMemberManagementPage: React.FC = () => {
                                 e.target.checked ? [...prev, student.id] : prev.filter(id => id !== student.id)
                               );
                             }}
-                            className="w-3.5 h-3.5 rounded border-slate-300 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
+                            className="w-3.5 h-3.5 rounded border-gray-300 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
                           />
                         </div>
 
                         <div className="flex items-center gap-3 min-w-0">
                           <ProfileAvatar 
                             src={student.profileImageUrl || `https://ui-avatars.com/api/?name=${student.firstName}&background=6366f1&color=fff`} 
-                            className="w-8 h-8 rounded-full shadow-sm border border-slate-100 dark:border-white/5 shrink-0" 
+                            className="w-8 h-8 rounded-full shadow-sm border border-gray-100 dark:border-white/5 shrink-0" 
                           />
                           <div className="flex-1 min-w-0 flex items-center gap-2">
-                            <span className="text-[10px] text-slate-400 font-bold bg-slate-100 dark:bg-white/10 px-1.5 py-0.5 rounded shrink-0">
+                            <span className="text-[10px] text-gray-400 font-bold bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded shrink-0">
                               {student.studentId}
                             </span>
-                            <p className="text-[12px] font-black text-slate-900 dark:text-white truncate">
+                            <p className="text-[12px] font-black text-gray-900 dark:text-white truncate">
                               {student.title || ''}{student.firstName} {student.lastName}
                             </p>
                           </div>
@@ -885,14 +885,14 @@ const ClubMemberManagementPage: React.FC = () => {
                               {studentClubMap[student.id].clubName}
                             </span>
                           ) : (
-                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-400 dark:bg-white/10 dark:text-slate-500 whitespace-nowrap text-center">
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-gray-100 text-gray-400 dark:bg-white/10 dark:text-gray-500 whitespace-nowrap text-center">
                               ยังไม่มีชุมนุม
                             </span>
                           )}
                         </div>
 
                         <div className="text-center">
-                          <span className="text-[11px] font-black text-slate-500 dark:text-slate-400">
+                          <span className="text-[11px] font-black text-gray-500 dark:text-gray-400">
                             {thaiFormatClass(student.classLevel)}/{student.room}
                           </span>
                         </div>
@@ -916,13 +916,13 @@ const ClubMemberManagementPage: React.FC = () => {
               </div>
 
               {/* CLUB MEMBER LIST - RIGHT */}
-              <div className="flex-[1.1] flex flex-col bg-white dark:bg-[#161a27] rounded-[24px] border border-slate-200 dark:border-white/5 overflow-hidden shadow-sm">
-                <div className="px-6 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between">
+              <div className="flex-[1.1] flex flex-col bg-white dark:bg-[#2a2b2f] rounded-[24px] border border-gray-200 dark:border-white/5 overflow-hidden shadow-sm">
+                <div className="px-6 py-4 border-b border-gray-100 dark:border-white/5 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-violet-600 rounded-xl text-white shadow-lg shadow-violet-600/20"><UserCheck size={16} /></div>
                     <div>
-                      <h3 className="text-xs font-black text-slate-900 dark:text-white leading-none">นักเรียนในชุมนุม</h3>
-                      <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-wider">{selectedClub.name}</p>
+                      <h3 className="text-xs font-black text-gray-900 dark:text-white leading-none">นักเรียนในชุมนุม</h3>
+                      <p className="text-[10px] text-gray-400 font-bold mt-1 uppercase tracking-wider">{selectedClub.name}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -934,21 +934,21 @@ const ClubMemberManagementPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="px-6 py-3 bg-slate-50/50 dark:bg-[#1a1b1e]/50 border-b border-slate-100 dark:border-white/5">
+                <div className="px-6 py-3 bg-gray-50/50 dark:bg-[#1e1f21]/50 border-b border-gray-100 dark:border-white/5">
                   <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={13} />
                     <input 
                       type="text" 
                       placeholder="ค้นหาในชุมนุม..." 
                       value={searchTerm} 
                       onChange={(e) => setSearchTerm(e.target.value)} 
-                      className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-[#1a1b1e] border border-slate-100 dark:border-white/10 rounded-xl text-[11px] font-bold dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 dark:focus:border-violet-500 transition-all outline-none" 
+                      className="w-full pl-9 pr-3 py-2 bg-gray-50 dark:bg-[#1e1f21] border border-gray-100 dark:border-white/10 rounded-xl text-[11px] font-bold dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 dark:focus:border-violet-500 transition-all outline-none" 
                     />
                   </div>
                 </div>
 
                 {/* TABLE HEADER */}
-                <div className="px-6 py-2 bg-slate-50 dark:bg-[#1a1b1e]/80 border-b border-slate-100 dark:border-white/5 grid grid-cols-[1fr,70px,44px] items-center text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                <div className="px-6 py-2 bg-gray-50 dark:bg-[#1e1f21]/80 border-b border-gray-100 dark:border-white/5 grid grid-cols-[1fr,70px,44px] items-center text-[9px] font-black text-gray-400 uppercase tracking-widest">
                   <span>รหัส / รายชื่อนักเรียน</span>
                   <span className="text-center">ชั้น/ห้อง</span>
                   <span className="text-right">จัดการ</span>
@@ -956,7 +956,7 @@ const ClubMemberManagementPage: React.FC = () => {
 
                 <div className="flex-1 overflow-y-auto px-4 py-2 custom-scrollbar">
                   {members.filter(m => `${m.title || ''}${m.firstName} ${m.lastName} ${m.studentId}`.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-2 opacity-40">
+                    <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-2 opacity-40">
                       <Users size={32} strokeWidth={1} />
                       <p className="text-[10px] font-black uppercase tracking-widest">ยังไม่มีสมาชิก</p>
                     </div>
@@ -969,20 +969,20 @@ const ClubMemberManagementPage: React.FC = () => {
                         <div className="flex items-center gap-3 min-w-0">
                           <ProfileAvatar 
                             src={member.profileImageUrl || `https://ui-avatars.com/api/?name=${member.firstName}&background=6366f1&color=fff`} 
-                            className="w-8 h-8 rounded-full shadow-sm border border-slate-100 dark:border-white/5 shrink-0" 
+                            className="w-8 h-8 rounded-full shadow-sm border border-gray-100 dark:border-white/5 shrink-0" 
                           />
                           <div className="flex-1 min-w-0 flex items-center gap-2">
-                            <span className="text-[10px] text-slate-400 font-bold bg-slate-100 dark:bg-white/10 px-1.5 py-0.5 rounded shrink-0">
+                            <span className="text-[10px] text-gray-400 font-bold bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded shrink-0">
                               {member.studentId}
                             </span>
-                            <p className="text-[12px] font-black text-slate-900 dark:text-white truncate">
+                            <p className="text-[12px] font-black text-gray-900 dark:text-white truncate">
                               {member.title || ''}{member.firstName} {member.lastName}
                             </p>
                           </div>
                         </div>
                         
                         <div className="text-center flex flex-col items-center gap-1">
-                          <span className="text-[11px] font-black text-slate-500 dark:text-slate-400">
+                          <span className="text-[11px] font-black text-gray-500 dark:text-gray-400">
                             {thaiFormatClass(member.classLevel)}/{member.room}
                           </span>
                           <div className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-tighter ${
@@ -1009,7 +1009,7 @@ const ClubMemberManagementPage: React.FC = () => {
                             disabled={!canManageAllClubs && member.status === 'confirmed'}
                             className={`p-1.5 rounded-lg transition-all shadow-sm shrink-0 ${
                               !canManageAllClubs && member.status === 'confirmed'
-                              ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
+                              ? 'text-gray-300 dark:text-gray-700 cursor-not-allowed'
                               : 'text-rose-400 hover:bg-rose-500 hover:text-white'
                             }`}
                           >

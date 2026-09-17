@@ -464,15 +464,34 @@ function aiIsActiveStudent(student) {
 }
 
 async function aiGetCallerContext(uid) {
-    const snap = await admin.firestore().collection("users").doc(uid).get();
-    if (!snap.exists) return null;
-    const data = snap.data() || {};
+    let snap = await admin.firestore().collection("users").doc(uid).get();
+    let data = snap.exists ? snap.data() || {} : null;
+    if (!data) {
+        try {
+            const teacherSnap = await admin.firestore().collectionGroup("teachers").where("uid", "==", uid).limit(1).get();
+            if (!teacherSnap.empty) {
+                const tDoc = teacherSnap.docs[0];
+                const tData = tDoc.data() || {};
+                const schoolId = tDoc.ref.parent.parent ? tDoc.ref.parent.parent.id : null;
+                data = {
+                    ...tData,
+                    schoolId: tData.schoolId || schoolId,
+                    homeSchoolId: tData.schoolId || schoolId,
+                };
+            }
+        } catch (_) {}
+    }
+    if (!data) return null;
     const rawRoles = Array.isArray(data.role) ? data.role : data.role ? [data.role] : [];
+    const roles = rawRoles.map((r) => String(r).toLowerCase());
+    if (roles.includes("admin") && !roles.includes("school_admin")) {
+        roles.push("school_admin");
+    }
     return {
         uid,
-        roles: rawRoles.map((r) => String(r).toLowerCase()),
+        roles,
         schoolId: data.homeSchoolId || data.schoolId || null,
-        displayName: data.displayName || data.name || data.email || "ผู้ใช้งาน",
+        displayName: data.displayName || data.name || data.fullName || data.email || "ผู้ใช้งาน",
     };
 }
 
@@ -483,7 +502,7 @@ function aiHasAccess(caller, allowedRoles) {
 // สิทธิ์จัดการผู้ใช้ (ลบ/แก้อีเมล/แก้รหัสผ่าน) — ต้องตรงกับ allowedRoles ของหน้า
 // /owner/users และ /school/:schoolId/teachers ใน src/App.tsx (SUPER_ADMIN + ADMIN_ACCESS + ACADEMIC_ACCESS)
 const USER_MANAGEMENT_ROLES = [
-    AI_ROLES.SUPER_ADMIN, AI_ROLES.SCHOOL_ADMIN, AI_ROLES.DIRECTOR, AI_ROLES.DEPT_HEAD, AI_ROLES.ACADEMIC_ADMIN,
+    AI_ROLES.SUPER_ADMIN, AI_ROLES.SCHOOL_ADMIN, AI_ROLES.DIRECTOR, AI_ROLES.DEPT_HEAD, AI_ROLES.ACADEMIC_ADMIN, "admin",
 ];
 
 // ตรวจสิทธิ์ผู้เรียกก่อนอนุญาตให้ลบ/แก้ไขบัญชีผู้ใช้อื่น — SUPER_ADMIN จัดการได้ทุกโรงเรียน
@@ -1078,10 +1097,10 @@ exports.getConsentAuditStats = functions.region("us-central1").https.onCall(asyn
     const isSuperAdminCaller = caller.roles.includes(AI_ROLES.SUPER_ADMIN);
     const requestedSchoolId = data?.schoolId ? String(data.schoolId) : null;
     // ผู้ดูแลโรงเรียนทั่วไปดูได้เฉพาะโรงเรียนของตัวเอง — SUPER_ADMIN เลือกดูโรงเรียนไหนก็ได้
-    if (!isSuperAdminCaller && requestedSchoolId && requestedSchoolId !== caller.schoolId) {
+    if (!isSuperAdminCaller && requestedSchoolId && caller.schoolId && requestedSchoolId !== caller.schoolId) {
         throw new functions.https.HttpsError("permission-denied", "คุณไม่มีสิทธิ์ดูข้อมูลโรงเรียนอื่น");
     }
-    const schoolId = isSuperAdminCaller ? (requestedSchoolId || caller.schoolId) : caller.schoolId;
+    const schoolId = requestedSchoolId || caller.schoolId;
     if (!schoolId) {
         throw new functions.https.HttpsError("invalid-argument", "ไม่พบรหัสโรงเรียนที่ต้องการตรวจสอบ");
     }
@@ -1093,47 +1112,112 @@ exports.getConsentAuditStats = functions.region("us-central1").https.onCall(asyn
         db.collection("consents").where("schoolId", "==", schoolId).get(),
     ]);
 
+    const consentById = new Set();
     const consentByKey = new Map();
     consentsSnap.docs.forEach((d) => {
         const c = d.data();
+        if (d.id) consentById.add(d.id);
+        if (c.refId) consentById.add(String(c.refId));
         if (c.userType && c.refId) consentByKey.set(`${c.userType}_${c.refId}`, c);
+        if (c.userType && d.id) consentByKey.set(`${c.userType}_${d.id}`, c);
     });
 
-    const MAX_PENDING_LISTED = 300;
+    const MAX_LISTED = 500;
 
     const teacherRows = teachersSnap.docs.map((d) => {
         const t = d.data();
-        return { id: d.id, name: `${t.title || ""}${t.firstName || ""} ${t.lastName || ""}`.trim() || d.id };
+        return {
+            id: d.id,
+            uid: t.uid || null,
+            userId: t.userId || null,
+            teacherId: t.teacherId || null,
+            name: `${t.title || ""}${t.firstName || ""} ${t.lastName || ""}`.trim() || d.id,
+        };
     });
-    const teacherPending = teacherRows.filter((t) => !consentByKey.has(`teacher_${t.id}`));
+    const teacherAccepted = [];
+    const teacherPending = [];
+    teacherRows.forEach((t) => {
+        const keys = [
+            t.id && `teacher_${t.id}`,
+            t.uid && `teacher_${t.uid}`,
+            t.userId && `teacher_${t.userId}`,
+            t.teacherId && `teacher_${t.teacherId}`,
+        ].filter(Boolean);
+        const consentDoc = keys.map((k) => consentByKey.get(k)).find(Boolean);
+        const hasId = (t.id && consentById.has(t.id)) ||
+            (t.uid && consentById.has(t.uid)) ||
+            (t.userId && consentById.has(t.userId)) ||
+            (t.teacherId && consentById.has(t.teacherId));
+        if (consentDoc || hasId) {
+            teacherAccepted.push({
+                id: t.id,
+                name: t.name,
+                acceptedAt: consentDoc?.acceptedAt ? (consentDoc.acceptedAt.toDate ? consentDoc.acceptedAt.toDate().toISOString() : consentDoc.acceptedAt) : null,
+            });
+        } else {
+            teacherPending.push({ id: t.id, name: t.name });
+        }
+    });
 
     const studentRows = studentsSnap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
         .filter(aiIsActiveStudent)
         .map((s) => ({
             id: s.id,
+            studentId: s.studentId || null,
+            idCardNumber: s.idCardNumber || null,
             name: `${s.title || ""}${s.firstName || ""} ${s.lastName || ""}`.trim() || s.id,
             classLevel: s.classLevel || "",
             room: s.room || "",
         }));
-    const studentPending = studentRows.filter((s) => !consentByKey.has(`student_${s.id}`));
+    const studentAccepted = [];
+    const studentPending = [];
+    studentRows.forEach((s) => {
+        const keys = [
+            s.id && `student_${s.id}`,
+            s.studentId && `student_${s.studentId}`,
+            s.idCardNumber && `student_${s.idCardNumber}`,
+        ].filter(Boolean);
+        const consentDoc = keys.map((k) => consentByKey.get(k)).find(Boolean);
+        const hasId = (s.id && consentById.has(s.id)) ||
+            (s.studentId && consentById.has(s.studentId)) ||
+            (s.idCardNumber && consentById.has(s.idCardNumber));
+        if (consentDoc || hasId) {
+            studentAccepted.push({
+                id: s.id,
+                name: s.name,
+                classLevel: s.classLevel,
+                room: s.room,
+                acceptedAt: consentDoc?.acceptedAt ? (consentDoc.acceptedAt.toDate ? consentDoc.acceptedAt.toDate().toISOString() : consentDoc.acceptedAt) : null,
+            });
+        } else {
+            studentPending.push({
+                id: s.id,
+                name: s.name,
+                classLevel: s.classLevel,
+                room: s.room,
+            });
+        }
+    });
 
     return {
         schoolId,
         teachers: {
             total: teacherRows.length,
-            accepted: teacherRows.length - teacherPending.length,
-            pending: teacherPending.slice(0, MAX_PENDING_LISTED),
-            pendingTruncated: teacherPending.length > MAX_PENDING_LISTED,
+            accepted: teacherAccepted.length,
+            acceptedList: teacherAccepted.slice(0, MAX_LISTED),
+            pending: teacherPending.slice(0, MAX_LISTED),
+            acceptedTruncated: teacherAccepted.length > MAX_LISTED,
+            pendingTruncated: teacherPending.length > MAX_LISTED,
         },
         students: {
             total: studentRows.length,
-            accepted: studentRows.length - studentPending.length,
-            pending: studentPending.slice(0, MAX_PENDING_LISTED),
-            pendingTruncated: studentPending.length > MAX_PENDING_LISTED,
+            accepted: studentAccepted.length,
+            acceptedList: studentAccepted.slice(0, MAX_LISTED),
+            pending: studentPending.slice(0, MAX_LISTED),
+            acceptedTruncated: studentAccepted.length > MAX_LISTED,
+            pendingTruncated: studentPending.length > MAX_LISTED,
         },
-        // ผู้ปกครองไม่มีบัญชี/เอกสารส่วนตัวในระบบให้ไล่รายชื่อทั้งหมดมาเทียบ (ล็อกอินผ่านเบอร์โทร+เลขบัตร
-        // ของบุตร ไม่ใช่บัญชีของตัวเอง) จึงรายงานได้แค่ "จำนวนที่เคยกดยอมรับแล้ว" ไม่มีตัวส่วนที่แน่นอน
         parentsAcceptedCount: consentsSnap.docs.filter((d) => d.data().userType === "parent").length,
     };
 });

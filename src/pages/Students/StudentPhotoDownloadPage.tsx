@@ -262,7 +262,7 @@ const StudentPhotoDownloadPage: React.FC = () => {
 
   return (
     <MainLayout>
-      <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-h-screen bg-gray-50 dark:bg-[#1c1c24]">
+      <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-h-screen bg-gray-50 dark:bg-[#1e1f21]">
         <div className="max-w-7xl mx-auto">
           {/* Header */}
           <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between mb-6">
@@ -301,7 +301,7 @@ const StudentPhotoDownloadPage: React.FC = () => {
                 <select
                   value={selectedClassLevel}
                   onChange={(e) => setSelectedClassLevel(e.target.value)}
-                  className="px-3 py-2 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#1c1c24] text-gray-900 dark:text-white text-sm min-w-[120px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="px-3 py-2 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white text-sm min-w-[120px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
                   <option value="">ทั้งหมด</option>
                   {availableLevels.map((cl) => (
@@ -317,7 +317,7 @@ const StudentPhotoDownloadPage: React.FC = () => {
                   <select
                     value={selectedRoom}
                     onChange={(e) => setSelectedRoom(e.target.value)}
-                    className="px-3 py-2 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#1c1c24] text-gray-900 dark:text-white text-sm min-w-[100px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="px-3 py-2 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white text-sm min-w-[100px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
                     <option value="">ทุกห้อง</option>
                     {availableRooms.map((r) => (
@@ -337,7 +337,7 @@ const StudentPhotoDownloadPage: React.FC = () => {
                     value={searchText}
                     onChange={(e) => setSearchText(e.target.value)}
                     placeholder="ชื่อ / รหัสนักเรียน"
-                    className="w-full pl-9 pr-9 py-2 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#1c1c24] text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full pl-9 pr-9 py-2 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                   {searchText && (
                     <button
@@ -362,7 +362,7 @@ const StudentPhotoDownloadPage: React.FC = () => {
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
                   placeholder="ค้นหาชื่อ / รหัสนักเรียน"
-                  className="w-full pl-9 pr-9 py-2 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#1c1c24] text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full pl-9 pr-9 py-2 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
                 {searchText && (
                   <button
@@ -415,7 +415,7 @@ const StudentPhotoDownloadPage: React.FC = () => {
                   {studentsWithPhoto.length > 0 && (
                     <button
                       onClick={toggleSelectAll}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#1c1c24] text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#1e1f21] text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
                     >
                       {selectedIds.size === studentsWithPhoto.length ? (
                         <CheckSquare size={15} className="text-indigo-500" />
@@ -480,7 +480,7 @@ const StudentPhotoDownloadPage: React.FC = () => {
                         )}
 
                         {/* Photo */}
-                        <div className="aspect-[3/4] bg-gray-100 dark:bg-[#1c1c24] relative overflow-hidden">
+                        <div className="aspect-[3/4] bg-gray-100 dark:bg-[#1e1f21] relative overflow-hidden">
                           {hasPhoto ? (
                             <img
                               src={student.profileImageUrl}

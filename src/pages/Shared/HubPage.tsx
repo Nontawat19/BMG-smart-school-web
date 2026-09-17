@@ -530,7 +530,7 @@ const HubPage: React.FC = () => {
           description: "ดูประวัติการลาของนักเรียนและพิมพ์เอกสารใบลา",
           icon: <History size={24} />,
           path: "/attendance/leave-history",
-          colorClass: "bg-slate-100 text-slate-600 dark:bg-slate-500/20 dark:text-slate-400",
+          colorClass: "bg-gray-100 text-gray-600 dark:bg-gray-500/20 dark:text-gray-400",
           allowedRoles: STAFF_ACCESS
         },
         {
@@ -625,7 +625,7 @@ const HubPage: React.FC = () => {
           description: "ดูประวัติการลาของครูและพิมพ์เอกสารใบลา",
           icon: <History size={24} />,
           path: "/attendance/teacher-leave-history",
-          colorClass: "bg-slate-100 text-slate-600 dark:bg-slate-500/20 dark:text-slate-400",
+          colorClass: "bg-gray-100 text-gray-600 dark:bg-gray-500/20 dark:text-gray-400",
           allowedRoles: teacherLeaveHistoryAccess
         },
         {
@@ -1513,7 +1513,7 @@ const HubPage: React.FC = () => {
 
   return (
     <MainLayout>
-      <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-h-screen transition-colors duration-300 bg-gray-50 dark:bg-[#1c1c24]">
+      <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-h-screen transition-colors duration-300 bg-gray-50 dark:bg-[#1e1f21]">
         <div className="max-w-7xl mx-auto">
           {/* Header */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">

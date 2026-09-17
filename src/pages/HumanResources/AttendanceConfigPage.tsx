@@ -76,7 +76,7 @@ const AttendanceConfigPageSkeleton: React.FC = () => (
           </div>
 
           {/* Toggle row (e.g. ระบบอ่านออกเสียง) */}
-          <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-800/40 p-4 rounded-2xl border border-gray-100 dark:border-gray-700">
+          <div className="flex items-center justify-between bg-gray-50 dark:bg-[#2a2b2f]/40 p-4 rounded-2xl border border-gray-100 dark:border-gray-700">
             <div className="flex items-center gap-3">
               <SkeletonLoader className="w-10 h-10 rounded-lg" />
               <div className="space-y-2">
@@ -470,18 +470,23 @@ const AttendanceConfigPage: React.FC = () => {
   return (
     <MainLayout>
       <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] transition-colors duration-300 p-4 sm:p-6 lg:p-8">
-        <div className="max-w-4xl mx-auto bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm p-8">
-          <div className="flex items-center gap-4 mb-6 border-b border-gray-200 dark:border-gray-700 pb-4">
-            <BackButton to="/academic/hub/settings" />
-            <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-full">
-              <Clock className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+        <div className="max-w-4xl mx-auto space-y-6">
+          <header>
+            <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center">
+              <BackButton to="/academic/hub/settings" />
+              <div className="flex items-center gap-4 min-w-0">
+                <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-full shrink-0">
+                  <Clock className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="min-w-0">
+                  <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white">ตั้งค่าเวลาลงเวลา</h1>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">กำหนดเวลาเส้นตายสำหรับการเช็คชื่อ (หากมาหลังเวลานี้จะถือว่า "สาย")</p>
+                </div>
+              </div>
             </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">ตั้งค่าเวลาลงเวลา</h1>
-              <p className="text-gray-500 dark:text-gray-400 text-sm">กำหนดเวลาเส้นตายสำหรับการเช็คชื่อ (หากมาหลังเวลานี้จะถือว่า "สาย")</p>
-            </div>
-          </div>
+          </header>
 
+          <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm p-8">
           <form onSubmit={handleSave} className="space-y-8">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* ส่วนของนักเรียน */}
@@ -528,7 +533,7 @@ const AttendanceConfigPage: React.FC = () => {
                       type="time"
                       value={studentLateTime}
                       onChange={(e) => setStudentLateTime(e.target.value)}
-                      className={`w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-[#1e1f21] text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all ${!isEditing ? 'opacity-60 cursor-not-allowed bg-gray-50 dark:bg-gray-800' : ''}`}
+                      className={`w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-[#1e1f21] text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all ${!isEditing ? 'opacity-60 cursor-not-allowed bg-gray-50 dark:bg-[#2a2b2f]' : ''}`}
                       disabled={!isEditing}
                       required
                     />
@@ -567,7 +572,7 @@ const AttendanceConfigPage: React.FC = () => {
                       type="time"
                       value={studentCheckoutTime}
                       onChange={(e) => setStudentCheckoutTime(e.target.value)}
-                      className={`w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-[#1e1f21] text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all ${!isEditing ? 'opacity-60 cursor-not-allowed bg-gray-50 dark:bg-gray-800' : ''}`}
+                      className={`w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-[#1e1f21] text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all ${!isEditing ? 'opacity-60 cursor-not-allowed bg-gray-50 dark:bg-[#2a2b2f]' : ''}`}
                       disabled={!isEditing}
                       required
                     />
@@ -619,7 +624,7 @@ const AttendanceConfigPage: React.FC = () => {
                       type="time"
                       value={teacherLateTime}
                       onChange={(e) => setTeacherLateTime(e.target.value)}
-                      className={`w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-[#1e1f21] text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all ${!isEditing ? 'opacity-60 cursor-not-allowed bg-gray-50 dark:bg-gray-800' : ''}`}
+                      className={`w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-[#1e1f21] text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all ${!isEditing ? 'opacity-60 cursor-not-allowed bg-gray-50 dark:bg-[#2a2b2f]' : ''}`}
                       disabled={!isEditing}
                       required
                     />
@@ -658,7 +663,7 @@ const AttendanceConfigPage: React.FC = () => {
                       type="time"
                       value={teacherCheckoutTime}
                       onChange={(e) => setTeacherCheckoutTime(e.target.value)}
-                      className={`w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-[#1e1f21] text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all ${!isEditing ? 'opacity-60 cursor-not-allowed bg-gray-50 dark:bg-gray-800' : ''}`}
+                      className={`w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-[#1e1f21] text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all ${!isEditing ? 'opacity-60 cursor-not-allowed bg-gray-50 dark:bg-[#2a2b2f]' : ''}`}
                       disabled={!isEditing}
                       required
                     />
@@ -846,6 +851,7 @@ const AttendanceConfigPage: React.FC = () => {
                 </p>
               </div>
             </div>
+          </div>
           </div>
         </div>
       </div>

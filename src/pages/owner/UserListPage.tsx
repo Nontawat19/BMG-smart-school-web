@@ -77,7 +77,7 @@ const RoleBadges: React.FC<{ roles: string[]; email: string }> = ({ roles, email
   const roleStyles: { [key: string]: { icon: React.ReactNode, text: string, className: string } } = {
     [ROLES.SUPER_ADMIN]: { icon: <FaShieldAlt />, text: 'ผู้ดูแลสูงสุด (Super Admin)', className: 'bg-red-50 text-red-600 border-red-100 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20' },
     [ROLES.SCHOOL_ADMIN]: { icon: <FaSchool />, text: 'ผู้ดูแลโรงเรียน (School Admin)', className: 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20' },
-    [ROLES.GENERAL_USER]: { icon: <FaBriefcase />, text: 'ผู้ใช้ทั่วไป', className: 'bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-500/10 dark:text-slate-300 dark:border-slate-500/20' },
+    [ROLES.GENERAL_USER]: { icon: <FaBriefcase />, text: 'ผู้ใช้ทั่วไป', className: 'bg-gray-50 text-gray-700 border-gray-200 dark:bg-gray-500/10 dark:text-gray-300 dark:border-gray-500/20' },
     [ROLES.STUDENT_AFFAIRS]: { icon: <FaUserGraduate />, text: 'งานกิจการนักเรียน', className: 'bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/20' },
     [ROLES.TEACHER]: { icon: <FaChalkboardTeacher />, text: 'ครู (Teacher)', className: 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20' },
     [ROLES.STUDENT_ATTENDANCE]: { icon: <FaIdBadge />, text: 'ลงเวลานักเรียน', className: 'bg-cyan-50 text-cyan-700 border-cyan-100 dark:bg-cyan-500/10 dark:text-cyan-300 dark:border-cyan-500/20' },
@@ -497,25 +497,35 @@ const UserListPage: React.FC = () => {
     <MainLayout>
       <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] p-4 sm:p-6 text-gray-900 dark:text-white transition-colors duration-300">
         <div className="max-w-7xl mx-auto">
-          <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-            <div>
-            <div className="flex items-center gap-4">
-              <BackButton />
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight whitespace-nowrap">ผู้ใช้ทั้งหมดในระบบ</h1>
+          <header className="mb-8 space-y-4">
+            <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 flex-1 items-center gap-4">
+                <BackButton />
+                <div className="min-w-0">
+                  <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white">ผู้ใช้ทั้งหมดในระบบ</h1>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    จัดการและตรวจสอบข้อมูลผู้ใช้ทั้งหมด
+                  </p>
+                </div>
+              </div>
+              <Link
+                to="/owner/users/add"
+                className="flex shrink-0 items-center justify-center gap-2 px-6 py-2.5 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 active:scale-95 transition-all shadow-lg shadow-indigo-500/25 whitespace-nowrap"
+              >
+                <FaUserPlus />
+                <span>เพิ่มผู้ใช้</span>
+              </Link>
             </div>
-              <p className="mt-1 text-gray-500 dark:text-gray-400">
-                จัดการและตรวจสอบข้อมูลผู้ใช้ทั้งหมด
-              </p>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-              <div className="relative w-full sm:w-64">
+
+            <div className="flex flex-wrap items-center gap-3 p-4 bg-white dark:bg-[#2a2b2f]/80 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/50 backdrop-blur-sm">
+              <div className="relative flex-grow min-w-[240px] max-w-xs">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <FaSearch className="text-gray-400" />
                 </div>
                 <input
                   type="text"
                   placeholder="ค้นหาชื่อ, อีเมล, โรงเรียน..."
-                  className="pl-10 pr-4 py-2.5 w-full bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all shadow-sm text-sm text-gray-900 dark:text-white placeholder-gray-400"
+                  className="pl-10 pr-4 py-2.5 w-full bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-sm text-gray-900 dark:text-white placeholder-gray-400"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
@@ -524,7 +534,7 @@ const UserListPage: React.FC = () => {
                 <select
                   value={schoolFilter}
                   onChange={(e) => setSchoolFilter(e.target.value)}
-                  className="w-full pl-4 pr-10 py-2.5 bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all shadow-sm text-sm text-gray-900 dark:text-white"
+                  className="w-full pl-4 pr-10 py-2.5 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-sm text-gray-900 dark:text-white"
                 >
                   <option value="all">ทุกโรงเรียน</option>
                   {schools.map((school) => (
@@ -536,7 +546,7 @@ const UserListPage: React.FC = () => {
                 <select
                   value={roleFilter}
                   onChange={(e) => setRoleFilter(e.target.value)}
-                  className="w-full pl-4 pr-10 py-2.5 bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all shadow-sm text-sm text-gray-900 dark:text-white"
+                  className="w-full pl-4 pr-10 py-2.5 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-sm text-gray-900 dark:text-white"
                 >
                   <option value="all">ทุกบทบาท</option>
                   {OWNER_ROLE_OPTIONS.map((role) => (
@@ -545,7 +555,7 @@ const UserListPage: React.FC = () => {
                 </select>
               </div>
               {/* View Mode Toggle */}
-              <div className="flex items-center bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-white/5 rounded-xl p-1 shadow-sm self-start sm:self-auto">
+              <div className="flex items-center bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-white/5 rounded-xl p-1 shrink-0">
                 <button
                   onClick={() => { setViewMode('list'); localStorage.setItem('userListViewMode', 'list'); }}
                   className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}
@@ -561,13 +571,6 @@ const UserListPage: React.FC = () => {
                   <LayoutGrid size={16} />
                 </button>
               </div>
-              <Link
-                to="/owner/users/add"
-                className="flex items-center justify-center gap-2 px-6 py-2.5 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 active:scale-95 transition-all shadow-lg shadow-indigo-500/25 whitespace-nowrap"
-              >
-                <FaUserPlus />
-                <span>เพิ่มผู้ใช้</span>
-              </Link>
             </div>
           </header>
 

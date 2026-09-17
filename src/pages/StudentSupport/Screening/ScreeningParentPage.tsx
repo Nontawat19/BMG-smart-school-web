@@ -96,7 +96,7 @@ const ScreeningParentPage: React.FC = () => {
 
     return (
         <MainLayout>
-            <div className="p-4 sm:p-8 bg-gray-50 dark:bg-gray-900 min-h-screen">
+            <div className="p-4 sm:p-8 bg-gray-50 dark:bg-[#1e1f21] min-h-screen">
                 <div className="max-w-7xl mx-auto">
                     {/* Header */}
                     <div className="flex justify-between items-center mb-6">
@@ -111,14 +111,14 @@ const ScreeningParentPage: React.FC = () => {
                             <select 
                                 value={selectedClass} 
                                 onChange={e => setSelectedClass(e.target.value)} 
-                                className="p-2 border rounded-lg bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+                                className="p-2 border rounded-lg bg-white dark:bg-[#2a2b2f] dark:border-gray-700 dark:text-white"
                             >
                                 {availableLevels.map(l => <option key={l} value={l}>{l}</option>)}
                             </select>
                             <select 
                                 value={selectedRoom} 
                                 onChange={e => setSelectedRoom(e.target.value)} 
-                                className="p-2 border rounded-lg min-w-[100px] bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+                                className="p-2 border rounded-lg min-w-[100px] bg-white dark:bg-[#2a2b2f] dark:border-gray-700 dark:text-white"
                             >
                                 <option value="">ทุกห้อง</option>
                                 {rooms.map(r => <option key={r} value={r}>ห้อง {r}</option>)}
@@ -127,7 +127,7 @@ const ScreeningParentPage: React.FC = () => {
                     </div>
 
                     {/* Table */}
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden border border-gray-100 dark:border-gray-700">
+                    <div className="bg-white dark:bg-[#2a2b2f] rounded-xl shadow-sm overflow-hidden border border-gray-100 dark:border-gray-700">
                         <table className="w-full text-left">
                             <thead className="bg-gray-50 dark:bg-gray-700/50">
                                 <tr className="text-gray-700 dark:text-gray-200">

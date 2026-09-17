@@ -13,7 +13,6 @@ import {
   GraduationCap,
   Loader2,
   Lock,
-  Sparkles,
   Zap,
 } from 'lucide-react';
 import Swal from 'sweetalert2';
@@ -167,7 +166,7 @@ const ActivityHubSettingsPage: React.FC = () => {
   if (loading) {
     return (
       <MainLayout>
-        <div className="min-h-screen bg-gray-50 dark:bg-[#18191d] p-4 sm:p-6">
+        <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] p-4 sm:p-6">
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="h-40 w-full rounded-2xl bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -183,33 +182,27 @@ const ActivityHubSettingsPage: React.FC = () => {
 
   return (
     <MainLayout>
-      <div className="min-h-screen bg-gray-50 dark:bg-[#18191d] text-gray-900 dark:text-white">
+      <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white">
 
-        {/* Hero Header */}
-        <div className="relative overflow-hidden bg-white dark:bg-[#1e1f23] border-b border-gray-200 dark:border-gray-800">
-          <div className="absolute inset-0 pointer-events-none">
-            <div className={`absolute -top-20 -right-20 w-72 h-72 rounded-full opacity-10 bg-gradient-to-br ${activeMode.gradient} blur-3xl transition-all duration-700`} />
-            <div className="absolute -bottom-10 -left-10 w-48 h-48 rounded-full opacity-5 bg-gradient-to-br from-slate-400 to-slate-600 blur-2xl" />
-          </div>
-          <div className="relative mx-auto max-w-4xl px-4 sm:px-6 py-8">
-            <BackButton to="/academic/hub/settings" className="mb-4" />
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold bg-gradient-to-r ${activeMode.gradient} text-white shadow`}>
-                    <Sparkles size={11} />
-                    {activeMode.sublabel}
-                  </span>
+        {/* Content */}
+        <div className="mx-auto max-w-4xl px-4 sm:px-6 py-8 space-y-6">
+
+          {/* Header */}
+          <header>
+            <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 flex-1 items-center gap-4">
+                <BackButton to="/academic/hub/settings" />
+                <div className="min-w-0">
+                  <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
+                    ตั้งค่ากิจกรรมพัฒนาผู้เรียน
+                  </h1>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    เลือกวิธีที่โรงเรียนใช้จัดการกิจกรรม ลูกเสือ / ยุวกาชาด / รด / บำเพ็ญประโยชน์
+                  </p>
                 </div>
-                <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
-                  ตั้งค่ากิจกรรมพัฒนาผู้เรียน
-                </h1>
-                <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-400 max-w-md">
-                  เลือกวิธีที่โรงเรียนใช้จัดการกิจกรรม ลูกเสือ / ยุวกาชาด / รด / บำเพ็ญประโยชน์
-                </p>
               </div>
               {/* Save indicator */}
-              <div className="flex items-center gap-2 self-end pb-1">
+              <div className="flex shrink-0 items-center gap-2">
                 {saving && (
                   <span className="flex items-center gap-1.5 text-xs text-gray-400">
                     <Loader2 size={13} className="animate-spin" />
@@ -224,11 +217,7 @@ const ActivityHubSettingsPage: React.FC = () => {
                 )}
               </div>
             </div>
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="mx-auto max-w-4xl px-4 sm:px-6 py-8 space-y-6">
+          </header>
 
           {/* Mode Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

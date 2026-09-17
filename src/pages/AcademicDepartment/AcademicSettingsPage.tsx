@@ -108,30 +108,28 @@ const AcademicSettingsPage: React.FC = () => {
 
     return (
         <MainLayout>
-            <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-h-screen bg-gray-50 dark:bg-[#1a1b1e]">
+            <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-h-screen bg-gray-50 dark:bg-[#1e1f21]">
                 <div className="max-w-4xl mx-auto">
-                    {/* Breadcrumb & Header */}
-                    <div className="mb-8">
-                        <div className="flex items-center gap-4 mb-4">
-                            <BackButton to="/academic/hub/settings" />
-                            <span className="font-medium text-gray-500 dark:text-gray-400">กลับหน้างานวิชาการ</span>
-                        </div>
-
-                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                            <div className="flex items-center gap-4">
-                                <div className="w-14 h-14 bg-indigo-100 dark:bg-indigo-500/20 rounded-2xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 shadow-sm">
-                                    <Settings size={32} />
-                                </div>
-                                <div>
-                                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">ตั้งค่าระบบงานวิชาการ</h1>
-                                    <p className="text-gray-500 dark:text-gray-400">กำหนดพฤติกรรมและข้อกำหนดของฟีเจอร์ต่างๆ</p>
+                    {/* Header */}
+                    <header className="mb-8">
+                        <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex min-w-0 flex-1 items-center gap-4">
+                                <BackButton to="/academic/hub/settings" />
+                                <div className="flex items-center gap-4 min-w-0">
+                                    <div className="w-14 h-14 bg-indigo-100 dark:bg-indigo-500/20 rounded-2xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 shadow-sm shrink-0">
+                                        <Settings size={32} />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white">ตั้งค่าระบบงานวิชาการ</h1>
+                                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">กำหนดพฤติกรรมและข้อกำหนดของฟีเจอร์ต่างๆ</p>
+                                    </div>
                                 </div>
                             </div>
 
                             <button
                                 onClick={handleSave}
                                 disabled={saving}
-                                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white px-8 py-3 rounded-2xl font-bold shadow-lg shadow-indigo-200 dark:shadow-none transition-all hover:-translate-y-1 active:scale-95"
+                                className="w-full sm:w-auto shrink-0 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white px-8 py-3 rounded-2xl font-bold shadow-lg shadow-indigo-200 dark:shadow-none transition-all hover:-translate-y-1 active:scale-95"
                             >
                                 {saving ? (
                                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
@@ -141,7 +139,7 @@ const AcademicSettingsPage: React.FC = () => {
                                 <span>บันทึกการตั้งค่า</span>
                             </button>
                         </div>
-                    </div>
+                    </header>
 
                     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
                         {/* Attendance Settings */}
@@ -191,7 +189,7 @@ const AcademicSettingsPage: React.FC = () => {
                                                     type="date"
                                                     value={settings.historicalAttendanceStartDate}
                                                     onChange={(e) => handleInputChange('historicalAttendanceStartDate', e.target.value)}
-                                                    className="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm transition-all shadow-sm"
+                                                    className="w-full px-4 py-2 bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm transition-all shadow-sm"
                                                 />
                                             </div>
                                             <div className="space-y-1.5">
@@ -200,7 +198,7 @@ const AcademicSettingsPage: React.FC = () => {
                                                     type="date"
                                                     value={settings.historicalAttendanceEndDate}
                                                     onChange={(e) => handleInputChange('historicalAttendanceEndDate', e.target.value)}
-                                                    className="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm transition-all shadow-sm"
+                                                    className="w-full px-4 py-2 bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm transition-all shadow-sm"
                                                 />
                                             </div>
                                         </div>
@@ -210,7 +208,7 @@ const AcademicSettingsPage: React.FC = () => {
                                     </div>
                                 )}
 
-                                <div className="h-px bg-gray-50 dark:bg-gray-800/50"></div>
+                                <div className="h-px bg-gray-50 dark:bg-[#2a2b2f]/50"></div>
 
                                 {/* Information Box */}
                                 <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/20 rounded-2xl p-4 flex gap-4">
@@ -259,14 +257,14 @@ const AcademicSettingsPage: React.FC = () => {
                                     </div>
                                 </div>
 
-                                <div className="h-px bg-gray-50 dark:bg-gray-800/50"></div>
+                                <div className="h-px bg-gray-50 dark:bg-[#2a2b2f]/50"></div>
 
                                 <div className="flex items-center justify-between opacity-50 cursor-not-allowed">
                                     <div>
                                         <h3 className="text-lg font-bold text-gray-600 dark:text-gray-400">ปิดการแก้ไขเกรดเมื่อสิ้นสุดภาคเรียน</h3>
                                         <p className="text-gray-500 dark:text-gray-500 text-sm mt-1">เร็วๆ นี้</p>
                                     </div>
-                                    <div className="bg-gray-200 dark:bg-gray-800 h-8 w-14 rounded-full"></div>
+                                    <div className="bg-gray-200 dark:bg-[#2a2b2f] h-8 w-14 rounded-full"></div>
                                 </div>
                             </div>
                         </div>

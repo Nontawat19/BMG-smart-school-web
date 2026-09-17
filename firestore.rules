@@ -391,7 +391,8 @@ service cloud.firestore {
     // เพราะ global fallback ด้านล่างกัน anonymous ออกหมด แต่ต้องให้นักเรียน/ผู้ปกครองบันทึกความยินยอม
     // ของตัวเองได้ อ่าน/เขียนได้เฉพาะเอกสารของ uid ตัวเองเท่านั้น
     match /consents/{consentId} {
-      allow read, write: if request.auth != null && request.auth.uid == consentId;
+      allow read: if isRealAuth() || (request.auth != null && request.auth.uid == consentId);
+      allow write: if request.auth != null && request.auth.uid == consentId;
     }
 
     // 5. Global fallback

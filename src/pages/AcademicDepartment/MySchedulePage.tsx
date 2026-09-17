@@ -494,20 +494,22 @@ const MySchedulePage: React.FC = () => {
         <div className="max-w-7xl mx-auto">
           <section className="bg-white dark:bg-[#2a2b2f] rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm p-3 sm:p-6">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-gray-200 dark:border-gray-700">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 mb-2">
-                  <BackButton to="/home" className="w-8 h-8 sm:w-9 sm:h-9 shrink-0" />
-                  {mode === 'student' ? <School size={22} /> : <UserRound size={22} />}
-                  <span className="text-sm font-bold">{mode === 'student' ? 'ตารางเรียนของฉัน' : 'ตารางสอนของฉัน'}</span>
+              <div className="flex min-w-0 items-center gap-4">
+                <BackButton to="/academic/hub/scheduling" />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400 mb-1">
+                    {mode === 'student' ? <School size={16} /> : <UserRound size={16} />}
+                    <span className="text-xs font-bold uppercase tracking-wide">{mode === 'student' ? 'ตารางเรียนของฉัน' : 'ตารางสอนของฉัน'}</span>
+                  </div>
+                  <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white">
+                    {displayName || 'ตารางของฉัน'}
+                  </h1>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    {mode === 'student'
+                      ? `${CLASSES[studentClassId] || studentClassId}${studentRoom ? `/${studentRoom}` : ''}`
+                      : 'ตารางสอนรายบุคคลจากระบบจัดตารางกลาง'}
+                  </p>
                 </div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {displayName || 'ตารางของฉัน'}
-                </h1>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  {mode === 'student'
-                    ? `${CLASSES[studentClassId] || studentClassId}${studentRoom ? `/${studentRoom}` : ''}`
-                    : 'ตารางสอนรายบุคคลจากระบบจัดตารางกลาง'}
-                </p>
               </div>
 
               <div className="inline-flex items-center gap-2 rounded-xl border border-indigo-100 dark:border-indigo-900/50 bg-indigo-50 dark:bg-indigo-950/40 px-3 py-2 text-sm font-semibold text-indigo-700 dark:text-indigo-300">

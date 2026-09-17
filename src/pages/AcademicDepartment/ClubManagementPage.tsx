@@ -643,29 +643,31 @@ const ClubManagementPage: React.FC = () => {
       <div className="p-4 sm:p-8 max-w-7xl mx-auto text-gray-900 dark:text-white transition-colors duration-300">
 
         {/* Page Header */}
-        <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="flex items-center gap-4">
-            <BackButton to="/academic/hub/activities" />
-            <div>
-              <h1 className="text-2xl font-black tracking-tight flex items-center gap-3">
-                <Users className="text-indigo-500" size={28} />
-                จัดการข้อมูลชุมนุม
-              </h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 font-medium">เพิ่มและจัดการรายชื่อชุมนุมสำหรับนักเรียน</p>
+        <header className="mb-8">
+          <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 flex-1 items-center gap-4">
+              <BackButton to="/academic/hub/activities" />
+              <div className="min-w-0">
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight flex items-center gap-3 text-gray-900 dark:text-white">
+                  <Users className="text-indigo-500" size={28} />
+                  จัดการข้อมูลชุมนุม
+                </h1>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">เพิ่มและจัดการรายชื่อชุมนุมสำหรับนักเรียน</p>
+              </div>
+            </div>
+
+            <div className="relative w-full shrink-0 lg:w-72">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+              <input
+                type="text"
+                placeholder="ค้นหาชื่อชุมนุม..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-medium"
+              />
             </div>
           </div>
-
-          <div className="relative w-full md:w-72">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-            <input
-              type="text"
-              placeholder="ค้นหาชื่อชุมนุม..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm text-sm font-medium"
-            />
-          </div>
-        </div>
+        </header>
 
         {/* ส่วนการตั้งค่าระบบชุมนุม */}
         <div className="mb-6 bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden animate-in fade-in slide-in-from-top-2">

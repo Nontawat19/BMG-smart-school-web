@@ -481,18 +481,20 @@ const StudentTimeRegistrationPage: React.FC = () => {
     <MainLayout>
       <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] transition-colors duration-300 p-4 sm:p-6 lg:p-8">
         <div className="max-w-4xl mx-auto">
-          <div className="flex flex-col md:flex-row md:items-center gap-4 mb-6">
-            <BackButton to="/academic/hub/attendance" />
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <FaUserClock className="text-teal-600 dark:text-teal-400" />
-                อนุญาตกลับก่อน (ไม่ตัดคะแนนพฤติกรรม)
-              </h1>
-              <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
-                บันทึกอนุญาตให้นักเรียนกลับก่อนเวลาโดยไม่ตัดคะแนนพฤติกรรม เลือกได้ทั้งรายบุคคล รายห้อง หรือทั้งโรงเรียน (เช่น กรณีหยุดครึ่งวัน)
-              </p>
+          <header className="mb-6">
+            <div className="flex items-center gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f]">
+              <BackButton to="/academic/hub/attendance" />
+              <div className="min-w-0">
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-2">
+                  <FaUserClock className="text-teal-600 dark:text-teal-400" />
+                  อนุญาตกลับก่อน (ไม่ตัดคะแนนพฤติกรรม)
+                </h1>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  บันทึกอนุญาตให้นักเรียนกลับก่อนเวลาโดยไม่ตัดคะแนนพฤติกรรม เลือกได้ทั้งรายบุคคล รายห้อง หรือทั้งโรงเรียน (เช่น กรณีหยุดครึ่งวัน)
+                </p>
+              </div>
             </div>
-          </div>
+          </header>
 
           <div className="bg-white dark:bg-[#2a2b2f] rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
             <form onSubmit={handleSubmit} className="p-5">

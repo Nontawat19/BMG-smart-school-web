@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import MainLayout from "@/layouts/MainLayout";
+import BackButton from "@/components/Shared/BackButton";
 import { firestore as db } from '@/firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import {
     ClipboardList, Filter, Search, ChevronDown, CheckCircle, AlertCircle, AlertTriangle
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import { saveSDQAssessment, getSDQAssessments, SDQAssessment, SDQScore, getSchoolLevels } from '@/services/sdqService';
 import SDQAssessmentModal from '@/components/SDQ/SDQAssessmentModal';
@@ -146,24 +146,26 @@ const SDQStudentPage: React.FC = () => {
 
     return (
         <MainLayout>
-            <div className="p-4 sm:p-8 bg-gray-50 dark:bg-gray-900 min-h-screen">
+            <div className="p-4 sm:p-8 bg-gray-50 dark:bg-[#1e1f21] min-h-screen">
                 <div className="max-w-7xl mx-auto">
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-                        <div>
-                            <Link to="/student-support/sdq" className="flex items-center text-sm text-gray-500 hover:text-indigo-600 mb-2">
-                                <ClipboardList size={16} className="mr-1" /> ย้อนกลับ
-                            </Link>
-                            <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                                <ClipboardList className="text-blue-600" />
-                                ประเมินตนเอง (นักเรียน)
-                            </h1>
-                            <p className="text-gray-500 dark:text-gray-400 text-sm">
-                                ประเมิน SDQ โดยนักเรียน
-                            </p>
+                    <header className="mb-6 space-y-4">
+                        <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex min-w-0 flex-1 items-center gap-4">
+                                <BackButton to="/student-support/sdq" />
+                                <div className="min-w-0">
+                                    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-2">
+                                        <ClipboardList className="text-blue-600" />
+                                        ประเมินตนเอง (นักเรียน)
+                                    </h1>
+                                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                                        ประเมิน SDQ โดยนักเรียน
+                                    </p>
+                                </div>
+                            </div>
                         </div>
 
                         {/* Filters */}
-                        <div className="flex flex-wrap gap-3">
+                        <div className="flex flex-wrap items-center gap-3 p-4 bg-white dark:bg-[#2a2b2f]/80 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/50 backdrop-blur-sm">
                             <div className="relative flex items-center bg-blue-50 dark:bg-blue-900/20 px-4 py-2 rounded-xl text-blue-700 dark:text-blue-300 font-bold border border-blue-100 dark:border-blue-800">
                                 <span>ปีการศึกษา {academicYear || '...'}</span>
                             </div>
@@ -171,7 +173,7 @@ const SDQStudentPage: React.FC = () => {
                                 <select
                                     value={selectedClass}
                                     onChange={(e) => setSelectedClass(e.target.value)}
-                                    className="appearance-none bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 py-2 pl-4 pr-10 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="appearance-none bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 py-2 pl-4 pr-10 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 >
                                     <option value="">ทั้งหมด</option>
                                     {availableLevels.map(level => (
@@ -185,7 +187,7 @@ const SDQStudentPage: React.FC = () => {
                                 <select
                                     value={selectedRoom}
                                     onChange={(e) => setSelectedRoom(e.target.value)}
-                                    className="appearance-none bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 py-2 pl-4 pr-10 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[100px]"
+                                    className="appearance-none bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 py-2 pl-4 pr-10 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[100px]"
                                 >
                                     <option value="">ทุกห้อง</option>
                                     {rooms.map(r => (
@@ -195,10 +197,10 @@ const SDQStudentPage: React.FC = () => {
                                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                             </div>
                         </div>
-                    </div>
+                    </header>
 
                     {/* Student List Table */}
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+                    <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
                         <div className="table-responsive">
                             <table className="w-full text-left border-collapse">
                                 <thead>

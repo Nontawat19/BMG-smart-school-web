@@ -79,12 +79,12 @@ const GeneralAffairsLayout: React.FC<GeneralAffairsLayoutProps> = ({ children })
   return (
     <div className="min-h-screen bg-[#f9fafb] dark:bg-[#1e1f21] text-gray-900 dark:text-gray-100 flex flex-col transition-colors duration-300">
       {/* ── Standalone General Affairs Top Navbar ── */}
-      <header className="sticky top-0 z-50 bg-white/95 dark:bg-[#111318]/95 backdrop-blur border-b border-slate-200 dark:border-white/10 shadow-sm">
+      <header className="sticky top-0 z-50 bg-white/95 dark:bg-[#2a2b2f]/95 backdrop-blur border-b border-slate-200 dark:border-white/10 shadow-sm">
         <div className="w-full px-3 sm:px-6 py-2.5 flex items-center justify-between gap-3">
           {/* Brand & System Title */}
           <div className="flex items-center gap-3 min-w-0">
             {logoUrl ? (
-              <img src={logoUrl} alt="Logo" className="w-9 h-9 object-contain rounded-lg flex-shrink-0" />
+              <img src={logoUrl} alt="Logo" className="w-9 h-9 rounded-full object-cover bg-white flex-shrink-0" />
             ) : (
               <div className="w-9 h-9 rounded-lg bg-indigo-600 text-white flex items-center justify-center flex-shrink-0 shadow">
                 <FaBriefcase size={17} />
@@ -182,7 +182,7 @@ const GeneralAffairsLayout: React.FC<GeneralAffairsLayoutProps> = ({ children })
 
         {/* Mobile Navigation Drawer */}
         {isMobileMenuOpen && (
-          <div className="xl:hidden border-t border-slate-200 dark:border-white/10 bg-white dark:bg-[#111318] px-4 py-3 space-y-1 animate-fade-in shadow-lg">
+          <div className="xl:hidden border-t border-slate-200 dark:border-white/10 bg-white dark:bg-[#2a2b2f] px-4 py-3 space-y-1 animate-fade-in shadow-lg">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
               เมนูระบบงานธุรการ
             </p>

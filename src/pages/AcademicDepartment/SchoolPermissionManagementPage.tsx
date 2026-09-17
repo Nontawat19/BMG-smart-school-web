@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import MainLayout from '@/layouts/MainLayout';
+import BackButton from '@/components/Shared/BackButton';
 import { usePermissionContext, RoutePermissionEntry } from '@/contexts/PermissionContext';
 import { ROUTE_REGISTRY, ROUTE_CATEGORIES } from '@/constants/routeRegistry';
 import { ROLES, ROLE_LABELS } from '@/constants/roles';
@@ -9,7 +9,7 @@ import { ROLE_PRIORITY } from '@/constants/roleManagement';
 import { RootState } from '@/store';
 import Swal from 'sweetalert2';
 import {
-  FaShieldAlt, FaArrowLeft, FaSearch, FaCheck, FaSave, FaUndo,
+  FaShieldAlt, FaSearch, FaCheck, FaSave, FaUndo,
   FaChevronDown, FaChevronUp, FaLock, FaUser, FaUsers, FaGraduationCap,
   FaClock, FaSchool, FaUserShield, FaCheckSquare, FaRegSquare,
   FaBriefcase, FaStar, FaIdBadge, FaInfoCircle, FaCrown, FaUserTie,
@@ -54,7 +54,7 @@ const ROLE_CONFIGS: RoleConfig[] = [
   { value: ROLES.TEACHER_ATTENDANCE,label: ROLE_LABELS[ROLES.TEACHER_ATTENDANCE],bg: 'bg-orange-50 dark:bg-orange-500/10',   text: 'text-orange-700 dark:text-orange-300',   border: 'border-orange-200 dark:border-orange-500/30',   activeBg: 'bg-orange-500',  icon: <FaClock /> },
   { value: ROLES.STUDENT_ATTENDANCE,label: ROLE_LABELS[ROLES.STUDENT_ATTENDANCE],bg: 'bg-amber-50 dark:bg-amber-500/10',     text: 'text-amber-700 dark:text-amber-300',     border: 'border-amber-200 dark:border-amber-500/30',     activeBg: 'bg-amber-500',   icon: <FaClock /> },
   { value: ROLES.TEACHER,           label: ROLE_LABELS[ROLES.TEACHER],           bg: 'bg-emerald-50 dark:bg-emerald-500/10', text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-200 dark:border-emerald-500/30', activeBg: 'bg-emerald-600', icon: <FaUser /> },
-  { value: ROLES.GENERAL_USER,      label: ROLE_LABELS[ROLES.GENERAL_USER],      bg: 'bg-slate-50 dark:bg-slate-500/10',     text: 'text-slate-700 dark:text-slate-300',     border: 'border-slate-200 dark:border-slate-500/30',     activeBg: 'bg-slate-600',   icon: <FaBriefcase /> },
+  { value: ROLES.GENERAL_USER,      label: ROLE_LABELS[ROLES.GENERAL_USER],      bg: 'bg-gray-50 dark:bg-gray-500/10',     text: 'text-gray-700 dark:text-gray-300',     border: 'border-gray-200 dark:border-gray-500/30',     activeBg: 'bg-gray-600',   icon: <FaBriefcase /> },
   { value: ROLES.STUDENT,           label: ROLE_LABELS[ROLES.STUDENT],           bg: 'bg-sky-50 dark:bg-sky-500/10',         text: 'text-sky-700 dark:text-sky-300',         border: 'border-sky-200 dark:border-sky-500/30',         activeBg: 'bg-sky-500',     icon: <FaGraduationCap /> },
 ].sort((a, b) => (ROLE_PRIORITY[b.value] || 0) - (ROLE_PRIORITY[a.value] || 0));
 
@@ -315,30 +315,23 @@ const SchoolPermissionManagementPage: React.FC = () => {
 
   return (
     <MainLayout>
-      <div className="min-h-screen bg-gray-50/50 dark:bg-[#14141b] text-gray-900 dark:text-white transition-colors duration-300 pb-12">
+      <div className="min-h-screen bg-gray-50/50 dark:bg-[#1e1f21] text-gray-900 dark:text-white transition-colors duration-300 pb-12">
         <div className="max-w-7xl mx-auto px-4 py-8">
 
           {/* ── Header ── */}
-          <div className="relative overflow-hidden bg-white dark:bg-[#1c1c24] rounded-2xl p-6 sm:p-10 mb-8 border border-white dark:border-white/5 shadow-xl shadow-gray-200/50 dark:shadow-none">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 blur-[80px] rounded-full -mr-20 -mt-20" />
-            <div className="absolute bottom-0 left-0 w-48 h-48 bg-violet-500/5 blur-[60px] rounded-full -ml-16 -mb-16" />
-            <div className="relative flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-              <div className="space-y-2">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-widest">
-                  <FaShieldAlt size={10} /> สิทธิ์การเข้าถึง (โรงเรียน)
-                </div>
-                <h1 className="text-3xl sm:text-4xl font-black tracking-tight">
+          <header className="mb-6">
+            <div className="flex items-center gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f]">
+              <BackButton to="/academic/hub/settings" />
+              <div className="min-w-0">
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white">
                   จัดการสิทธิ์ <span className="text-indigo-500">โรงเรียน</span>
                 </h1>
-                <p className="text-sm text-gray-500 dark:text-gray-400 max-w-md font-medium">
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                   เพิ่มสิทธิ์เข้าถึงได้เพิ่มเติม — สิทธิ์ที่ Super Admin กำหนดไว้จะยังคงอยู่เสมอ
                 </p>
               </div>
-              <Link to="/academic/hub/settings" className="group inline-flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 text-sm font-black transition-all hover:bg-gray-200 dark:hover:bg-white/10 active:scale-95 border border-transparent dark:border-white/5">
-                <FaArrowLeft className="text-[10px] transition-transform group-hover:-translate-x-1" /> กลับการตั้งค่า
-              </Link>
             </div>
-          </div>
+          </header>
 
           {/* ── Union Policy Banner ── */}
           <div className="mb-6 flex items-start gap-3 bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 rounded-2xl px-5 py-4">
@@ -356,7 +349,7 @@ const SchoolPermissionManagementPage: React.FC = () => {
           </div>
 
           {/* ── Mode Toggle ── */}
-          <div className="flex items-center gap-2 mb-6 bg-white dark:bg-[#1c1c24] rounded-2xl p-2 border border-gray-100 dark:border-white/5 shadow-sm w-fit flex-wrap">
+          <div className="flex items-center gap-2 mb-6 bg-white dark:bg-[#2a2b2f] rounded-2xl p-2 border border-gray-100 dark:border-white/5 shadow-sm w-fit flex-wrap">
             {([
               { id: 'roles',           label: 'สิทธิ์ (Role)',   icon: <FaShieldAlt size={12} />, active: 'bg-indigo-600' },
               { id: 'departments',     label: 'ฝ่ายงาน',         icon: <FaBriefcase size={12} />, active: 'bg-blue-600' },
@@ -377,7 +370,7 @@ const SchoolPermissionManagementPage: React.FC = () => {
 
             {/* ── Left Panel ── */}
             <div className="lg:col-span-4 lg:sticky lg:top-6 space-y-4">
-              <div className="bg-white dark:bg-[#1c1c24] rounded-3xl p-6 border border-white dark:border-white/5 shadow-xl shadow-gray-200/50 dark:shadow-none">
+              <div className="bg-white dark:bg-[#2a2b2f] rounded-3xl p-6 border border-white dark:border-white/5 shadow-xl shadow-gray-200/50 dark:shadow-none">
 
                 {mode === 'roles' && (
                   <>
@@ -491,7 +484,7 @@ const SchoolPermissionManagementPage: React.FC = () => {
               </div>
 
               {/* Legend */}
-              <div className="bg-white dark:bg-[#1c1c24] rounded-2xl p-4 border border-gray-100 dark:border-white/5 space-y-2.5">
+              <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-4 border border-gray-100 dark:border-white/5 space-y-2.5">
                 <p className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">คำอธิบายสิทธิ์</p>
                 <div className="flex items-center gap-2.5">
                   <div className={`w-4 h-4 rounded-md ${activeBg} flex items-center justify-center flex-shrink-0`}>
@@ -552,7 +545,7 @@ const SchoolPermissionManagementPage: React.FC = () => {
               </div>
 
               {/* Search */}
-              <div className="bg-white dark:bg-[#1c1c24] rounded-2xl px-4 border border-gray-200 dark:border-white/5 shadow-sm">
+              <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl px-4 border border-gray-200 dark:border-white/5 shadow-sm">
                 <div className="relative flex items-center h-12">
                   <FaSearch className="absolute left-0 text-gray-400 dark:text-gray-500 text-sm" />
                   <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
@@ -573,7 +566,7 @@ const SchoolPermissionManagementPage: React.FC = () => {
                   const noneOn = routes.every(r => !isRouteChecked(r.key));
                   const isCollapsed = collapsed.has(category);
                   return (
-                    <div key={category} className={`bg-white dark:bg-[#1c1c24] rounded-2xl border shadow-sm overflow-hidden ${readonly ? 'border-gray-100 dark:border-white/5 opacity-60' : 'border-gray-100 dark:border-white/5'}`}>
+                    <div key={category} className={`bg-white dark:bg-[#2a2b2f] rounded-2xl border shadow-sm overflow-hidden ${readonly ? 'border-gray-100 dark:border-white/5 opacity-60' : 'border-gray-100 dark:border-white/5'}`}>
                       <div className={`flex items-center justify-between px-5 py-3.5 border-b border-gray-100 dark:border-white/5 ${readonly ? 'bg-gray-50/50 dark:bg-white/[0.02]' : ''}`}>
                         <button onClick={() => setCollapsed(prev => { const n = new Set(prev); n.has(category) ? n.delete(category) : n.add(category); return n; })}
                           className="flex items-center gap-3 flex-1 text-left group">
@@ -654,7 +647,7 @@ const SchoolPermissionManagementPage: React.FC = () => {
                 })}
 
                 {!Object.keys(filteredGrouped).length && (
-                  <div className="bg-white dark:bg-[#1c1c24] rounded-2xl p-12 text-center border border-gray-100 dark:border-white/5 shadow-sm">
+                  <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-12 text-center border border-gray-100 dark:border-white/5 shadow-sm">
                     <FaSearch className="mx-auto text-3xl text-gray-300 dark:text-gray-600 mb-3" />
                     <p className="text-gray-500 dark:text-gray-400 font-bold">ไม่พบหน้าที่ตรงกับคำค้นหา</p>
                   </div>
@@ -662,7 +655,7 @@ const SchoolPermissionManagementPage: React.FC = () => {
               </div>
 
               {/* Sticky save bar */}
-              <div className="sticky bottom-4 bg-white/90 dark:bg-[#1c1c24]/90 backdrop-blur-md rounded-2xl px-6 py-4 border border-gray-200 dark:border-white/10 shadow-xl flex items-center justify-between gap-4">
+              <div className="sticky bottom-4 bg-white/90 dark:bg-[#2a2b2f]/90 backdrop-blur-md rounded-2xl px-6 py-4 border border-gray-200 dark:border-white/10 shadow-xl flex items-center justify-between gap-4">
                 <p className="text-sm font-bold text-gray-500 dark:text-gray-400 truncate">
                   <span className="font-black text-gray-900 dark:text-white">{activeLabel}</span>{' '}
                   เข้าถึงได้{' '}

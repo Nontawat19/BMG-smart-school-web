@@ -1268,7 +1268,7 @@ const DirectorAssignmentPage: React.FC = () => {
                     {qrDropdownOpenFor === doc.id && (
                       <>
                         <div className="fixed inset-0 z-10" onClick={() => setQrDropdownOpenFor(null)} />
-                        <div className="absolute z-20 top-full mt-1.5 right-0 sm:left-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl py-1 min-w-[180px]">
+                        <div className="absolute z-20 top-full mt-1.5 right-0 sm:left-0 bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl py-1 min-w-[180px]">
                           {qrLinks.map(({ page, url }, i) => (
                             <a
                               key={`${page}-${i}`}
@@ -1438,13 +1438,13 @@ const DirectorAssignmentPage: React.FC = () => {
     <GeneralAffairsLayout>
       <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] transition-colors duration-300">
         {/* ── STICKY HEADER ── */}
-        <div className="sticky top-0 z-30 bg-white/95 dark:bg-[#111318]/95 backdrop-blur border-b border-slate-200 dark:border-white/5 px-4 py-3 flex items-center justify-between gap-4 shadow-sm">
+        <div className="sticky top-0 z-30 bg-white/95 dark:bg-[#2a2b2f]/95 backdrop-blur border-b border-gray-200 dark:border-white/5 px-4 py-3 flex items-center justify-between gap-4 shadow-sm">
           <div className="flex items-center gap-3 min-w-0">
             <BackButton to="/general-affairs/home" />
-            <div className="h-5 w-px bg-slate-200 dark:bg-white/10" />
+            <div className="h-5 w-px bg-gray-200 dark:bg-white/10" />
             <div className="min-w-0">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">งานธุรการ · สำหรับผู้บริหาร</p>
-              <h1 className="text-sm font-black text-slate-800 dark:text-white truncate">เอกสารรอมอบหมาย (ผอ.)</h1>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">งานธุรการ · สำหรับผู้บริหาร</p>
+              <h1 className="text-sm font-black text-gray-800 dark:text-white truncate">เอกสารรอมอบหมาย (ผอ.)</h1>
             </div>
           </div>
         </div>
@@ -1481,7 +1481,7 @@ const DirectorAssignmentPage: React.FC = () => {
                 <select
                   value={itemsPerPage}
                   onChange={(e) => setItemsPerPage(Number(e.target.value))}
-                  className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="bg-gray-50 dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-indigo-500"
                 >
                   {[10, 25, 50, 100].map((n) => (
                     <option key={n} value={n}>{n}</option>
@@ -1592,7 +1592,7 @@ const DirectorAssignmentPage: React.FC = () => {
                   className={`rounded-xl p-2 sm:p-3 border-2 cursor-pointer transition-all duration-200 flex-shrink-0 ${
                     assignmentForm.inform
                       ? 'border-orange-400 bg-orange-50/50 dark:bg-orange-900/10'
-                      : 'border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 hover:border-orange-200'
+                      : 'border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-[#2a2b2f]/30 hover:border-orange-200'
                   }`}
                 >
                   <div className="flex items-center gap-3">
@@ -1614,7 +1614,7 @@ const DirectorAssignmentPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => setIsTeacherDropdownOpen(prev => !prev)}
-                        className="w-full flex items-center justify-between gap-2 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-base py-2.5 px-4 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-colors"
+                        className="w-full flex items-center justify-between gap-2 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-[#2a2b2f] text-base py-2.5 px-4 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-colors"
                       >
                         <span className={`truncate text-left ${assignmentForm.informTeacher ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500'}`}>
                           {assignmentForm.informTeacher || '-- เลือกรายชื่อครู/บุคลากร --'}
@@ -1625,7 +1625,7 @@ const DirectorAssignmentPage: React.FC = () => {
                       {isTeacherDropdownOpen && (
                         <>
                           <div className="fixed inset-0 z-10" onClick={() => setIsTeacherDropdownOpen(false)} />
-                          <div className="absolute z-20 top-full left-0 right-0 mt-1.5 max-h-56 overflow-y-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl py-1">
+                          <div className="absolute z-20 top-full left-0 right-0 mt-1.5 max-h-56 overflow-y-auto bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl py-1">
                             {teachers.map((t) => (
                               <button
                                 type="button"
@@ -1658,7 +1658,7 @@ const DirectorAssignmentPage: React.FC = () => {
 
                   {/* Comment Section */}
                   <div className="flex flex-col lg:flex-1 lg:min-h-0 relative">
-                    <div className="relative h-12 lg:h-auto lg:flex-1 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-all">
+                    <div className="relative h-12 lg:h-auto lg:flex-1 bg-gray-50 dark:bg-[#2a2b2f] rounded-xl border border-gray-200 dark:border-gray-700 focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-all">
                       <textarea
                         className="w-full h-full bg-transparent border-none focus:ring-0 p-3 text-base resize-none text-gray-800 dark:text-gray-100 placeholder-gray-400"
                         placeholder="ระบุข้อความ..."
@@ -1712,7 +1712,7 @@ const DirectorAssignmentPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="h-48 lg:h-auto lg:flex-1 bg-gray-50 dark:bg-gray-800 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 overflow-hidden touch-none relative lg:min-h-0 hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors group cursor-crosshair">
+                <div className="h-48 lg:h-auto lg:flex-1 bg-gray-50 dark:bg-[#2a2b2f] rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 overflow-hidden touch-none relative lg:min-h-0 hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors group cursor-crosshair">
                   <canvas
                     ref={signaturePadRef}
                     className="w-full h-full cursor-crosshair"

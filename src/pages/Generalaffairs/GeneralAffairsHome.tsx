@@ -73,13 +73,13 @@ const GeneralAffairsHome: React.FC = () => {
     <GeneralAffairsLayout>
       <div className="min-h-screen transition-colors duration-300">
         {/* ── STICKY HEADER ── */}
-        <div className="sticky top-0 z-30 bg-white/95 dark:bg-[#111318]/95 backdrop-blur border-b border-slate-200 dark:border-white/5 px-4 py-3 flex items-center justify-between gap-4 shadow-sm">
+        <div className="sticky top-0 z-30 bg-white/95 dark:bg-[#2a2b2f]/95 backdrop-blur border-b border-gray-200 dark:border-white/5 px-4 py-3 flex items-center justify-between gap-4 shadow-sm">
           <div className="flex items-center gap-3 min-w-0">
             <BackButton to="/home" />
-            <div className="h-5 w-px bg-slate-200 dark:bg-white/10" />
+            <div className="h-5 w-px bg-gray-200 dark:bg-white/10" />
             <div className="min-w-0">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">งานธุรการ</p>
-              <h1 className="text-sm font-black text-slate-800 dark:text-white truncate">ระบบงานธุรการโรงเรียน</h1>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">งานธุรการ</p>
+              <h1 className="text-sm font-black text-gray-800 dark:text-white truncate">ระบบงานธุรการโรงเรียน</h1>
             </div>
           </div>
         </div>

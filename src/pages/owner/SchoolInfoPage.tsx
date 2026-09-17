@@ -9,8 +9,9 @@ import { fetchSchoolSettings } from "@/store/slices/schoolSettingsSlice";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'; // Import deleteObject
 import Swal from 'sweetalert2';
 import { compressImage } from "@/utils/imageUtils";
-import { FaUpload, FaSchool, FaMapMarkerAlt, FaUserTie, FaSave, FaArrowLeft, FaCrosshairs, FaSearch, FaPen, FaEraser, FaUndo, FaWifi, FaChevronRight, FaChevronLeft, FaPlus, FaTrash, FaGlobe, FaShieldAlt, FaLayerGroup, FaCamera, FaUserClock, FaUserCheck, FaBriefcase } from 'react-icons/fa';
+import { FaUpload, FaSchool, FaMapMarkerAlt, FaUserTie, FaSave, FaCrosshairs, FaSearch, FaPen, FaEraser, FaUndo, FaWifi, FaChevronRight, FaChevronLeft, FaPlus, FaTrash, FaGlobe, FaShieldAlt, FaLayerGroup, FaCamera, FaUserClock, FaUserCheck, FaBriefcase } from 'react-icons/fa';
 import MainLayout from "@/layouts/MainLayout";
+import BackButton from "@/components/Shared/BackButton";
 import { ROLES } from "@/constants/roles";
 import { isFeatureFlagEnabled } from "@/utils/featureFlags";
 import {
@@ -742,49 +743,42 @@ const SchoolInfoPage: React.FC = () => {
         <div className="max-w-6xl mx-auto px-2 sm:px-4 lg:px-6 py-4">
 
           {/* Header */}
-          <div className="sticky top-[60px] z-[100] bg-gray-50/80 dark:bg-[#1e1f21]/80 backdrop-blur-md py-2.5 mb-3 -mx-2 px-2 sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6 border-b border-gray-200 dark:border-gray-800 transition-all duration-300">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-1">
-                  <Link to="/owner/schools" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">โรงเรียนทั้งหมด</Link>
-                  <span>/</span>
-                  <span className="text-gray-900 dark:text-white font-medium">{schoolId ? 'แก้ไขข้อมูล' : 'เพิ่มโรงเรียน'}</span>
+          <header className="sticky top-[60px] z-[100] mb-3 -mx-2 px-2 pt-2.5 sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6">
+            <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white/95 p-4 shadow-sm backdrop-blur-md transition-all duration-300 dark:border-gray-800 dark:bg-[#2a2b2f]/95 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 flex-1 items-center gap-4">
+                <BackButton to="/academic/hub/settings" />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-1">
+                    <Link to="/owner/schools" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">โรงเรียนทั้งหมด</Link>
+                    <span>/</span>
+                    <span className="text-gray-900 dark:text-white font-medium">{schoolId ? 'แก้ไขข้อมูล' : 'เพิ่มโรงเรียน'}</span>
+                  </div>
+                  <h1 className="text-lg sm:text-xl font-bold tracking-tight text-gray-900 dark:text-white">
+                    {schoolId ? 'แก้ไขข้อมูลโรงเรียน' : 'เพิ่มโรงเรียนใหม่'}
+                  </h1>
                 </div>
-                <h1 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white tracking-tight">
-                  {schoolId ? 'แก้ไขข้อมูลโรงเรียน' : 'เพิ่มโรงเรียนใหม่'}
-                </h1>
               </div>
 
-              <div className="flex items-center gap-3">
-                <Link
-                  to={isSchoolAdmin ? '/owner/hub' : '/owner/schools'}
-                  className="inline-flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-[#2a2b2f] dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-700 transition-all shadow-sm"
-                >
-                  <FaArrowLeft className="text-[10px]" />
-                  <span className="hidden sm:inline">ย้อนกลับ</span>
-                </Link>
-
-                <button
-                  type="submit"
-                  form="school-info-form"
-                  disabled={isSaving}
-                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transform hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                >
-                  {isSaving ? (
-                    <>
-                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      <span>กำลังบันทึก...</span>
-                    </>
-                  ) : (
-                    <>
-                      <FaSave />
-                      <span>บันทึกข้อมูลทั้งหมด</span>
-                    </>
-                  )}
-                </button>
-              </div>
+              <button
+                type="submit"
+                form="school-info-form"
+                disabled={isSaving}
+                className="flex shrink-0 items-center justify-center gap-2 px-5 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transform hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+              >
+                {isSaving ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>กำลังบันทึก...</span>
+                  </>
+                ) : (
+                  <>
+                    <FaSave />
+                    <span>บันทึกข้อมูลทั้งหมด</span>
+                  </>
+                )}
+              </button>
             </div>
-          </div>
+          </header>
 
           <form id="school-info-form" onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-12 gap-4">
 

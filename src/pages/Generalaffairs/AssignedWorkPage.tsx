@@ -108,16 +108,16 @@ const PdfThumbnail: React.FC<{ url: string }> = ({ url }) => {
   }, [url]);
 
   if (error) return (
-    <div className="w-full h-full flex flex-col items-center justify-center bg-gray-100 dark:bg-gray-800 text-gray-400">
+    <div className="w-full h-full flex flex-col items-center justify-center bg-gray-100 dark:bg-[#2a2b2f] text-gray-400">
       <FaFilePdf size={24} className="mb-1 opacity-50" />
       <span className="text-[10px]">Preview Fail</span>
     </div>
   );
 
   return (
-    <div className="relative w-full h-full bg-white dark:bg-gray-900 rounded-lg overflow-hidden flex items-center justify-center">
+    <div className="relative w-full h-full bg-white dark:bg-[#1e1f21] rounded-lg overflow-hidden flex items-center justify-center">
       {loading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-800 animate-pulse">
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-[#2a2b2f] animate-pulse">
           <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
         </div>
       )}
@@ -463,15 +463,15 @@ const AssignedWorkPage: React.FC = () => {
 
   return (
     <GeneralAffairsLayout>
-      <div className="min-h-screen bg-[#f8f9fb] dark:bg-[#151618] transition-colors duration-300 pb-20">
+      <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] transition-colors duration-300 pb-20">
         {/* ── STICKY HEADER ── */}
-        <div className="sticky top-0 z-30 bg-white/95 dark:bg-[#111318]/95 backdrop-blur border-b border-slate-200 dark:border-white/5 px-4 py-3 flex items-center justify-between gap-4 shadow-sm">
+        <div className="sticky top-0 z-30 bg-white/95 dark:bg-[#2a2b2f]/95 backdrop-blur border-b border-gray-200 dark:border-white/5 px-4 py-3 flex items-center justify-between gap-4 shadow-sm">
           <div className="flex items-center gap-3 min-w-0">
             <BackButton to="/general-affairs/home" />
-            <div className="h-5 w-px bg-slate-200 dark:bg-white/10" />
+            <div className="h-5 w-px bg-gray-200 dark:bg-white/10" />
             <div className="min-w-0">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">งานธุรการ</p>
-              <h1 className="text-sm font-black text-slate-800 dark:text-white truncate">งานที่ได้รับมอบหมาย</h1>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">งานธุรการ</p>
+              <h1 className="text-sm font-black text-gray-800 dark:text-white truncate">งานที่ได้รับมอบหมาย</h1>
             </div>
           </div>
         </div>
@@ -533,7 +533,7 @@ const AssignedWorkPage: React.FC = () => {
                   currentItems.map(renderDocumentCard)
                 ) : (
                   <div className="text-center py-32 bg-white dark:bg-[#212226] rounded-[2rem] border-2 border-dashed border-gray-100 dark:border-gray-800">
-                    <div className="bg-gray-50 dark:bg-gray-800 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <div className="bg-gray-50 dark:bg-[#2a2b2f] w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
                       <FaFilePdf className="text-gray-300 text-3xl" />
                     </div>
                     <h3 className="text-xl font-bold text-gray-900 dark:text-white">ไม่พบเอกสาร</h3>
@@ -550,7 +550,7 @@ const AssignedWorkPage: React.FC = () => {
                     <select
                       value={itemsPerPage}
                       onChange={(e) => setItemsPerPage(Number(e.target.value))}
-                      className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                      className="bg-gray-50 dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
                     >
                       <option value={10}>10</option>
                       <option value={20}>20</option>

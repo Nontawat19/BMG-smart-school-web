@@ -527,88 +527,90 @@ const SpecialPeriodAttendancePage: React.FC = () => {
       <div className={`min-h-screen text-gray-900 dark:text-white transition-colors duration-300 ${isPwaMode ? 'px-2 py-2 pb-6' : 'p-3 sm:p-4'}`}>
         <div className={`${isPwaMode ? 'max-w-full space-y-3' : 'max-w-5xl mx-auto min-w-0 space-y-3'}`}>
 
-          {/* ─ Header bar ─ */}
-          <div className="flex items-center gap-2 bg-white dark:bg-[#2a2b2f] rounded-xl border border-gray-200 dark:border-gray-700 px-3 py-2 shadow-sm">
-            <BackButton
-              to="/academic/hub/attendance"
-              className="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/10 border border-gray-200 dark:border-white/10 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-white/20 transition-all shrink-0 p-0"
-            />
-            <ClipboardCheck className="text-indigo-500 shrink-0" size={16} />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-black text-gray-900 dark:text-white leading-none truncate">
-                {selectedPeriod ? `เช็คชื่อ${selectedPeriod.title}` : 'เช็คชื่อคาบพิเศษ'}
-              </p>
-              {selectedPeriod && (
-                <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5 truncate">
-                  {selectedPeriod.periodType === 'oneTime'
-                    ? (() => {
-                        const start = new Date((selectedPeriod.eventDate || '') + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
-                        const end = selectedPeriod.eventEndDate
-                          ? new Date(selectedPeriod.eventEndDate + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
-                          : null;
-                        return end ? `${start} – ${end}` : start;
-                      })()
-                    : `${formatDay(selectedPeriod.day)}`} • {selectedPeriod.startTime}–{selectedPeriod.endTime}
-                </p>
-              )}
+          {/* ─ Header ─ */}
+          <header className="space-y-3">
+            <div className="flex items-center gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f]">
+              <BackButton to="/academic/hub/attendance" />
+              <div className="flex-1 min-w-0">
+                <h1 className="flex items-center gap-2 text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white truncate">
+                  <ClipboardCheck className="text-indigo-500 shrink-0" size={24} />
+                  {selectedPeriod ? `เช็คชื่อ${selectedPeriod.title}` : 'เช็คชื่อคาบพิเศษ'}
+                </h1>
+                {selectedPeriod && (
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 truncate">
+                    {selectedPeriod.periodType === 'oneTime'
+                      ? (() => {
+                          const start = new Date((selectedPeriod.eventDate || '') + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+                          const end = selectedPeriod.eventEndDate
+                            ? new Date(selectedPeriod.eventEndDate + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
+                            : null;
+                          return end ? `${start} – ${end}` : start;
+                        })()
+                      : `${formatDay(selectedPeriod.day)}`} • {selectedPeriod.startTime}–{selectedPeriod.endTime}
+                  </p>
+                )}
+              </div>
             </div>
-            <div className="flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400 shrink-0">
-              <span className="font-bold">ปี {activeAcademicYear || '…'}</span>
-              <span>/</span>
-              <span className="font-bold">เทอม {activeSemester || '…'}</span>
-            </div>
-            <Link
-              to="/academic/special-period-reports"
-              className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/30 text-[10px] font-black text-violet-600 dark:text-violet-400 hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-colors"
-            >
-              <BarChart2 size={11} />
-              รายงาน
-            </Link>
-            {/* Date picker */}
-            {(() => {
-              const isOneTimeRange = selectedPeriod?.periodType === 'oneTime' && !!selectedPeriod.eventDate;
-              const minDate = isOneTimeRange ? selectedPeriod!.eventDate! : undefined;
-              const maxDate = isOneTimeRange ? (selectedPeriod!.eventEndDate || selectedPeriod!.eventDate!) : undefined;
-              const curStr = toIsoDate(currentDate);
-              // Lock the date once a class+room is selected. selectedClassKey/selectedRoom
-              // don't clear when the date changes, so switching dates mid-tick silently
-              // discards unsaved marks (the roster effect below refetches for the new date) —
-              // lock prevents that accidental loss rather than any duplicate/wrong-date write.
-              const isEditingClass = !!selectedClassKey && !!selectedRoom;
-              const canPrev = !isEditingClass && (!isOneTimeRange || curStr > minDate!);
-              const canNext = !isEditingClass && (!isOneTimeRange || curStr < maxDate!);
-              return (
-                <div className="flex items-center bg-gray-50 dark:bg-white/5 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden shrink-0">
-                  <button
-                    disabled={!canPrev}
-                    onClick={() => setCurrentDate(d => { const n = new Date(d); n.setDate(n.getDate() - 1); return n; })}
-                    className={`px-2 py-1.5 transition-all ${canPrev ? 'hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 hover:text-indigo-500' : 'text-gray-200 dark:text-gray-700 cursor-not-allowed'}`}>
-                    <ChevronLeft size={14} />
-                  </button>
-                  <div className="relative flex items-center gap-1 px-2">
-                    <Calendar size={11} className="text-indigo-400 shrink-0" />
-                    <span className="text-[11px] font-black text-gray-800 dark:text-gray-100 whitespace-nowrap">
-                      {currentDate.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}
-                    </span>
-                    <input
-                      type="date"
-                      value={curStr}
-                      min={minDate}
-                      max={maxDate}
-                      disabled={isEditingClass}
-                      onChange={e => { const d = new Date(e.target.value + 'T00:00:00'); if (!isNaN(d.getTime())) setCurrentDate(d); }}
-                      className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-not-allowed" />
+
+            <div className="flex flex-wrap items-center gap-3 p-4 bg-white dark:bg-[#2a2b2f]/80 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/50 backdrop-blur-sm">
+              <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 shrink-0">
+                <span className="font-bold">ปี {activeAcademicYear || '…'}</span>
+                <span>/</span>
+                <span className="font-bold">เทอม {activeSemester || '…'}</span>
+              </div>
+              <Link
+                to="/academic/special-period-reports"
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/30 text-xs font-bold text-violet-600 dark:text-violet-400 hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-colors"
+              >
+                <BarChart2 size={13} />
+                รายงาน
+              </Link>
+              {/* Date picker */}
+              {(() => {
+                const isOneTimeRange = selectedPeriod?.periodType === 'oneTime' && !!selectedPeriod.eventDate;
+                const minDate = isOneTimeRange ? selectedPeriod!.eventDate! : undefined;
+                const maxDate = isOneTimeRange ? (selectedPeriod!.eventEndDate || selectedPeriod!.eventDate!) : undefined;
+                const curStr = toIsoDate(currentDate);
+                // Lock the date once a class+room is selected. selectedClassKey/selectedRoom
+                // don't clear when the date changes, so switching dates mid-tick silently
+                // discards unsaved marks (the roster effect below refetches for the new date) —
+                // lock prevents that accidental loss rather than any duplicate/wrong-date write.
+                const isEditingClass = !!selectedClassKey && !!selectedRoom;
+                const canPrev = !isEditingClass && (!isOneTimeRange || curStr > minDate!);
+                const canNext = !isEditingClass && (!isOneTimeRange || curStr < maxDate!);
+                return (
+                  <div className="flex items-center bg-gray-50 dark:bg-[#1e1f21] rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden shrink-0">
+                    <button
+                      disabled={!canPrev}
+                      onClick={() => setCurrentDate(d => { const n = new Date(d); n.setDate(n.getDate() - 1); return n; })}
+                      className={`px-2 py-1.5 transition-all ${canPrev ? 'hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 hover:text-indigo-500' : 'text-gray-200 dark:text-gray-700 cursor-not-allowed'}`}>
+                      <ChevronLeft size={14} />
+                    </button>
+                    <div className="relative flex items-center gap-1 px-2">
+                      <Calendar size={11} className="text-indigo-400 shrink-0" />
+                      <span className="text-[11px] font-black text-gray-800 dark:text-gray-100 whitespace-nowrap">
+                        {currentDate.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}
+                      </span>
+                      <input
+                        type="date"
+                        value={curStr}
+                        min={minDate}
+                        max={maxDate}
+                        disabled={isEditingClass}
+                        onChange={e => { const d = new Date(e.target.value + 'T00:00:00'); if (!isNaN(d.getTime())) setCurrentDate(d); }}
+                        className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-not-allowed" />
+                    </div>
+                    <button
+                      disabled={!canNext}
+                      onClick={() => setCurrentDate(d => { const n = new Date(d); n.setDate(n.getDate() + 1); return n; })}
+                      className={`px-2 py-1.5 transition-all ${canNext ? 'hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 hover:text-indigo-500' : 'text-gray-200 dark:text-gray-700 cursor-not-allowed'}`}>
+                      <ChevronRight size={14} />
+                    </button>
                   </div>
-                  <button
-                    disabled={!canNext}
-                    onClick={() => setCurrentDate(d => { const n = new Date(d); n.setDate(n.getDate() + 1); return n; })}
-                    className={`px-2 py-1.5 transition-all ${canNext ? 'hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 hover:text-indigo-500' : 'text-gray-200 dark:text-gray-700 cursor-not-allowed'}`}>
-                    <ChevronRight size={14} />
-                  </button>
-                </div>
-              );
-            })()}
-          </div>
+                );
+              })()}
+            </div>
+          </header>
 
           {periodsLoading ? (
             <div className="space-y-2 py-4">
@@ -630,7 +632,7 @@ const SpecialPeriodAttendancePage: React.FC = () => {
 
                 {/* Period selector (when not locked) */}
                 {!isPeriodLocked && (
-                  <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1e1f23] p-3 shadow-sm">
+                  <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#2a2b2f] p-3 shadow-sm">
                     <h3 className="mb-2 text-xs font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider">คาบกิจกรรมพิเศษ</h3>
                     <div className="space-y-1.5">
                       {allPeriods.map(p => {
@@ -662,7 +664,7 @@ const SpecialPeriodAttendancePage: React.FC = () => {
                 )}
 
                 {/* Class + Room selector */}
-                <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1e1f23] p-3 shadow-sm">
+                <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#2a2b2f] p-3 shadow-sm">
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <h3 className="text-xs font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider">ห้องเรียน</h3>
                     {selectedClassKey && selectedRoom && (
@@ -694,7 +696,7 @@ const SpecialPeriodAttendancePage: React.FC = () => {
                 </div>
 
                 {/* Activity details */}
-                <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1e1f23] p-3 shadow-sm">
+                <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#2a2b2f] p-3 shadow-sm">
                   <h3 className="mb-2 text-xs font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider">รายละเอียดกิจกรรม</h3>
                   <div className="space-y-2">
                     <div>
@@ -729,7 +731,7 @@ const SpecialPeriodAttendancePage: React.FC = () => {
                 ) : (
                   <>
                     {/* Compact top bar: 2-row layout, mobile-safe */}
-                    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1e1f23] px-3 pt-3 pb-2 shadow-sm space-y-2">
+                    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#2a2b2f] px-3 pt-3 pb-2 shadow-sm space-y-2">
 
                       {/* Row 1: title + status + action buttons */}
                       <div className="flex items-center gap-2">
@@ -814,7 +816,7 @@ const SpecialPeriodAttendancePage: React.FC = () => {
                         ))}
                       </div>
                     ) : filteredStudents.length === 0 ? (
-                      <div className="flex min-h-[180px] flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1e1f23] text-center text-gray-400">
+                      <div className="flex min-h-[180px] flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-white dark:bg-[#2a2b2f] text-center text-gray-400">
                         <Users size={28} className="mb-2 opacity-30" />
                         <p className="text-sm font-bold">ไม่พบนักเรียนในห้องนี้</p>
                       </div>
@@ -869,7 +871,7 @@ const SpecialPeriodAttendancePage: React.FC = () => {
                       </div>
                     ) : (
                       /* Desktop: compact table */
-                      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1e1f23] overflow-hidden shadow-sm">
+                      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#2a2b2f] overflow-hidden shadow-sm">
                         <div className="border-b border-gray-100 dark:border-gray-700 px-4 py-2 bg-gray-50/50 dark:bg-white/[0.02] flex justify-between items-center text-[10px] font-black text-gray-400 uppercase tracking-wider">
                           <div className="flex items-center gap-3">
                             <div className="w-6 text-center">ที่</div>
@@ -916,7 +918,7 @@ const SpecialPeriodAttendancePage: React.FC = () => {
                                       className={`flex-1 sm:flex-initial h-8 px-2.5 sm:px-3 rounded-lg border text-[11px] font-black transition-all ${
                                         status === o.id
                                           ? `${o.color} border-transparent text-white shadow-sm active:scale-95`
-                                          : 'bg-white dark:bg-[#1e1f23] border-gray-200 dark:border-gray-700 text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5'
+                                          : 'bg-white dark:bg-[#2a2b2f] border-gray-200 dark:border-gray-700 text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5'
                                       } ${isSubmitted ? 'cursor-not-allowed opacity-90' : ''}`}>
                                       {o.label}
                                     </button>

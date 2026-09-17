@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import MainLayout from "@/layouts/MainLayout";
+import BackButton from "@/components/Shared/BackButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore, auth } from "@/firebase";
 import { collection, getDocs, query, orderBy, doc, getDoc } from "firebase/firestore";
@@ -13,7 +14,6 @@ import {
     MapPin,
     ChevronRight,
     ChevronLeft,
-    ArrowLeft,
     PlusCircle,
     Clock,
     TrendingUp,
@@ -95,7 +95,6 @@ const HomeVisitDashboard: React.FC = () => {
     const [hasHomeroom, setHasHomeroom] = useState(true);
     const [currentPage, setCurrentPage] = useState(1);
     const studentsPerPage = 30;
-    const navigate = useNavigate();
 
 
     const fetchStudents = useCallback(async (currentSchoolId: string) => {
@@ -269,35 +268,30 @@ const HomeVisitDashboard: React.FC = () => {
 
     return (
         <MainLayout>
-            <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-h-screen bg-slate-50 dark:bg-[#1a1b1e] transition-colors duration-300">
+            <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-h-screen bg-gray-50 dark:bg-[#1e1f21] transition-colors duration-300">
                 <div className="max-w-7xl mx-auto">
                     {/* Header */}
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-                        <div className="flex items-center gap-4">
-                            <button
-                                onClick={() => navigate("/student-support")}
-                                className="p-2 bg-white dark:bg-[#2a2b2f] rounded-xl shadow-sm text-gray-600 dark:text-gray-400 hover:text-pink-600 dark:hover:text-pink-400 transition-all border border-gray-100 dark:border-gray-700"
-                            >
-                                <ArrowLeft size={24} />
-                            </button>
-                            <div>
-                                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                                    <Home className="text-pink-600 dark:text-pink-400" size={32} />
-                                    ระบบเยี่ยมบ้านนักเรียน
-                                </h1>
-                                <p className="text-gray-500 dark:text-gray-400">เลือกนักเรียนที่ต้องการบันทึกข้อมูลการเยี่ยมบ้าน</p>
+                    <header className="mb-8">
+                        <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex min-w-0 flex-1 items-center gap-4">
+                                <BackButton to="/student-support" />
+                                <div className="min-w-0">
+                                    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-2">
+                                        <Home className="text-pink-600 dark:text-pink-400" size={28} />
+                                        ระบบเยี่ยมบ้านนักเรียน
+                                    </h1>
+                                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">เลือกนักเรียนที่ต้องการบันทึกข้อมูลการเยี่ยมบ้าน</p>
+                                </div>
                             </div>
-                        </div>
-                        <div className="flex gap-2">
                             <Link
                                 to="/student-support/home-visit/summary"
-                                className="flex items-center gap-2 px-6 py-3 bg-pink-600 text-white rounded-2xl font-bold shadow-lg shadow-pink-500/20 hover:bg-pink-700 transition-all active:scale-95"
+                                className="flex shrink-0 items-center justify-center gap-2 px-6 py-3 bg-pink-600 text-white rounded-2xl font-bold shadow-lg shadow-pink-500/20 hover:bg-pink-700 transition-all active:scale-95"
                             >
                                 <TrendingUp size={20} />
                                 <span>รายงานสรุป</span>
                             </Link>
                         </div>
-                    </div>
+                    </header>
 
                     {/* Filters & Search */}
                     <div className="bg-white dark:bg-[#2a2b2f] p-4 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 mb-8 flex flex-col lg:flex-row gap-4">
@@ -492,7 +486,7 @@ const HomeVisitDashboard: React.FC = () => {
                                                             schoolId={schoolId}
                                                             teacherName={teacherName}
                                                             teacherPosition={teacherPosition}
-                                                            className="p-3 bg-slate-50 hover:bg-blue-50/70 dark:bg-[#272930] dark:hover:bg-blue-950/20 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 rounded-full border border-slate-200 hover:border-blue-200/60 dark:border-slate-700 dark:hover:border-blue-900/40 transition-all duration-300 flex items-center justify-center shadow-sm hover:shadow-md hover:shadow-blue-500/5 shrink-0 active:scale-90"
+                                                            className="p-3 bg-gray-50 hover:bg-blue-50/70 dark:bg-[#272930] dark:hover:bg-blue-950/20 text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 rounded-full border border-gray-200 hover:border-blue-200/60 dark:border-gray-700 dark:hover:border-blue-900/40 transition-all duration-300 flex items-center justify-center shadow-sm hover:shadow-md hover:shadow-blue-500/5 shrink-0 active:scale-90"
                                                         />
                                                     </div>
                                                 )}
