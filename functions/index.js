@@ -308,6 +308,50 @@ exports.cleanupFaceScanSnapshots = functions
         return { checkedCount, deletedCount };
     });
 
+// ─── Chat Image Cleanup ──────────────────────────────────────────────────────
+// รูปภาพที่ส่งในแชท (type: "image") เก็บไว้ได้ประมาณ 1 ปีการศึกษา (365 วัน) แล้วลบทิ้งถาวร ทั้งจาก
+// Firestore (เอกสารข้อความ) และ Firebase Storage (ไฟล์รูปจริง) เพื่อประหยัดพื้นที่ฐานข้อมูล — ข้อความ
+// ประเภทอื่น (ตัวหนังสือ/สติกเกอร์/GIF) ไม่ถูกลบ เพราะสติกเกอร์เป็นไฟล์ที่ bundle มากับแอปเอง (ไม่กิน
+// พื้นที่ Storage เพิ่ม) และ GIF เป็นแค่ลิงก์ไปเซิร์ฟเวอร์ภายนอก (ไม่ได้เก็บไฟล์ไว้เองเลย)
+exports.cleanupExpiredChatImages = functions
+    .region("us-central1")
+    .pubsub.schedule("every 24 hours")
+    .timeZone("Asia/Bangkok")
+    .onRun(async () => {
+        const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+        const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - ONE_YEAR_MS);
+        const bucket = admin.storage().bucket();
+
+        const snapshot = await admin.firestore()
+            .collectionGroup("messages")
+            .where("type", "==", "image")
+            .where("createdAt", "<=", cutoff)
+            .get();
+
+        let deletedCount = 0;
+        await Promise.all(snapshot.docs.map(async (docSnap) => {
+            const data = docSnap.data();
+            try {
+                if (data.storagePath) {
+                    try {
+                        await bucket.file(data.storagePath).delete();
+                    } catch (storageError) {
+                        if (storageError?.code !== 404) {
+                            console.error("Failed to delete expired chat image from Storage:", data.storagePath, storageError);
+                        }
+                    }
+                }
+                await docSnap.ref.delete();
+                deletedCount += 1;
+            } catch (error) {
+                console.error("Failed to delete expired chat image message:", docSnap.ref.path, error);
+            }
+        }));
+
+        console.log(`Chat image cleanup checked ${snapshot.size} expired image message(s), deleted ${deletedCount}.`);
+        return { checked: snapshot.size, deletedCount };
+    });
+
 // ─── MA Expiry Notification ──────────────────────────────────────────────────
 // แจ้งเตือนผู้ดูแลระบบสูงสุด (super_admin) เมื่อเหลือ <= 30 วันก่อนหมด MA ของแต่ละโรงเรียน
 // ข้อมูล MA เก็บแยกที่ school-settings/{schoolId}/summaries/license (อ่านได้เฉพาะ SUPER_ADMIN)

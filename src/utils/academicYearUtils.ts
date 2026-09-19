@@ -16,6 +16,37 @@ interface AcademicYearData {
 }
 
 /**
+ * คำนวณปีการศึกษาปัจจุบัน (พ.ศ.) โดยประมาณ:
+ * หากอยู่ในเดือน พ.ค. - ธ.ค. (เดือน 5-12) จะเป็นปี พ.ศ. ปัจจุบัน
+ * หากอยู่ในเดือน ม.ค. - เม.ย. (เดือน 1-4) จะยังอยู่ในปีการศึกษาเดิม (ปี พ.ศ. ปัจจุบัน - 1)
+ */
+export const calculateDefaultAcademicYear = (): string => {
+    const now = new Date();
+    const beYear = now.getFullYear() + 543;
+    const month = now.getMonth() + 1;
+    return String(month >= 5 ? beYear : beYear - 1);
+};
+
+/**
+ * ดึงปีการศึกษาจาก main_calendar/default หากไม่มีให้คำนวณตามรอบปีการศึกษา
+ */
+export const getOrFetchAcademicYear = async (firestore: any, schoolId?: string | null): Promise<string> => {
+    if (schoolId) {
+        try {
+            const docRef = doc(firestore, 'school-settings', schoolId, 'main_calendar', 'default');
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const yr = docSnap.data()?.academicYear || docSnap.data()?.year;
+                if (yr) return String(yr).trim();
+            }
+        } catch (e) {
+            console.warn('getOrFetchAcademicYear error:', e);
+        }
+    }
+    return calculateDefaultAcademicYear();
+};
+
+/**
  * ดึงข้อมูลปีการศึกษาและภาคเรียนปัจจุบันจาก SchoolCalendarPage
  */
 export const getCurrentAcademicYear = async (

@@ -24,7 +24,9 @@ import {
 } from "firebase/firestore";
 import { formatNotificationTime } from "@/utils/dateUtils";
 import Swal from "sweetalert2";
-import { Bell, Check, ExternalLink, Inbox, X } from "lucide-react";
+import { Bell, Check, ExternalLink, Inbox, MessagesSquare, X } from "lucide-react";
+import AttendanceNotificationCard, { AttendanceNotificationPayload } from "./AttendanceNotificationCard";
+import { purgeExpiredAttendanceNotifications } from "./purgeExpiredAttendanceNotifications";
 
 interface NotificationItem {
   id: string;
@@ -34,6 +36,8 @@ interface NotificationItem {
   createdAt: Timestamp;
   link?: string;
   source?: "system" | "club-request";
+  type?: "attendance";
+  attendance?: AttendanceNotificationPayload;
   clubRequest?: {
     requestId: string;
     approvalSide: "exit" | "entry";
@@ -72,6 +76,13 @@ const NotificationsPage: React.FC = () => {
         source: "system",
       })));
       setIsLoading(false);
+
+      // เก็บกวาดแจ้งเตือนการลงเวลาที่ข้ามวันไปแล้วทิ้ง กันฐานข้อมูลบวม (เก็บไว้แค่วันปัจจุบัน)
+      purgeExpiredAttendanceNotifications(snapshot.docs.map((notificationDoc) => ({
+        path: notificationDoc.ref.path,
+        type: notificationDoc.data().type,
+        createdAt: notificationDoc.data().createdAt,
+      })));
     }, (error) => {
       console.error("Error listening notifications:", error);
       setIsLoading(false);
@@ -230,10 +241,17 @@ const NotificationsPage: React.FC = () => {
   };
 
   const openNotification = async (item: NotificationItem) => {
-    if (!item.isRead && item.path) {
-      await updateDoc(doc(firestore, item.path), { isRead: true });
-    }
+    // นำทางไปหน้าปลายทางก่อนเสมอ — การมาร์คอ่านแล้วเป็นแค่ผลข้างเคียง ไม่ควรบล็อกการนำทาง
+    // ถ้า updateDoc ล้มเหลว (สิทธิ์/เน็ตขาด) ไม่ให้กดแล้วเหมือนไม่มีอะไรเกิดขึ้น
     if (item.link) navigate(item.link);
+
+    if (!item.isRead && item.path) {
+      try {
+        await updateDoc(doc(firestore, item.path), { isRead: true });
+      } catch (error) {
+        console.error("Error marking notification as read:", error);
+      }
+    }
   };
 
   const processClubRequest = async (item: NotificationItem, action: "approve" | "reject") => {
@@ -303,9 +321,9 @@ const NotificationsPage: React.FC = () => {
 
   return (
     <MainLayout>
-      <div className="min-h-[calc(100vh-60px)] bg-slate-50 p-4 text-slate-900 dark:bg-[#0f1117] dark:text-white sm:p-8">
+      <div className="min-h-[calc(100vh-60px)] bg-gray-50 p-4 text-gray-900 dark:bg-[#1e1f21] dark:text-white sm:p-8">
         <div className="mx-auto max-w-5xl space-y-5">
-          <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-[#161a27] sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-[#2a2b2f] sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <BackButton to="/home" />
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-500 text-white">
@@ -313,17 +331,22 @@ const NotificationsPage: React.FC = () => {
               </div>
               <div>
                 <h1 className="text-xl font-black">การแจ้งเตือนทั้งหมด</h1>
-                <p className="text-sm font-medium text-slate-500 dark:text-slate-400">รายการใหม่ {unreadCount} รายการ</p>
+                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">รายการใหม่ {unreadCount} รายการ</p>
               </div>
             </div>
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <button onClick={() => navigate("/notifications/classroom-chat")} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-indigo-700">
+                <MessagesSquare size={15} /> ห้องแชทรายชั้น
+              </button>
             {unreadCount > 0 && (
               <button onClick={markAllRead} className="rounded-xl bg-indigo-50 px-4 py-2 text-sm font-bold text-indigo-600 transition hover:bg-indigo-600 hover:text-white dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500 dark:hover:text-white">
                 ทำเครื่องหมายว่าอ่านทั้งหมด
               </button>
             )}
+            </div>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#161a27]">
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#2a2b2f]">
             {isLoading ? (
               <div className="space-y-3 p-4">
                 <SkeletonLoader height="72px" borderRadius="12px" />
@@ -331,18 +354,33 @@ const NotificationsPage: React.FC = () => {
                 <SkeletonLoader height="72px" borderRadius="12px" />
               </div>
             ) : notifications.length === 0 ? (
-              <div className="flex min-h-[360px] flex-col items-center justify-center p-10 text-center text-slate-400">
+              <div className="flex min-h-[360px] flex-col items-center justify-center p-10 text-center text-gray-400">
                 <Inbox size={58} strokeWidth={1.5} />
-                <h2 className="mt-4 text-lg font-black text-slate-700 dark:text-slate-200">ไม่มีการแจ้งเตือน</h2>
+                <h2 className="mt-4 text-lg font-black text-gray-700 dark:text-gray-200">ไม่มีการแจ้งเตือน</h2>
                 <p className="mt-1 text-sm">ทุกอย่างดูเรียบร้อยดี</p>
               </div>
             ) : (
-              <div className="divide-y divide-slate-100 dark:divide-white/10">
+              <div className="divide-y divide-gray-100 dark:divide-white/10">
                 {notifications.map((item) => (
-                  <div 
-                    key={item.id} 
+                  item.type === "attendance" && item.attendance ? (
+                    <div
+                      key={item.id}
+                      onClick={() => openNotification(item)}
+                      className={`flex items-start gap-3 p-4 transition hover:bg-gray-50 dark:hover:bg-white/5 ${item.link ? 'cursor-pointer' : ''}`}
+                    >
+                      <span className={`mt-2 h-2.5 w-2.5 shrink-0 rounded-full ${item.isRead ? "bg-transparent" : "bg-indigo-500"}`} />
+                      <div className="min-w-0 flex-1">
+                        <AttendanceNotificationCard attendance={item.attendance} />
+                        <p className="mt-2 text-xs font-medium text-gray-500">
+                          {formatNotificationTime(item.createdAt.toDate())}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                  <div
+                    key={item.id}
                     onClick={() => openNotification(item)}
-                    className={`flex flex-col gap-3 p-4 transition hover:bg-slate-50 dark:hover:bg-white/5 sm:flex-row sm:items-center ${item.link ? 'cursor-pointer' : ''}`}
+                    className={`flex flex-col gap-3 p-4 transition hover:bg-gray-50 dark:hover:bg-white/5 sm:flex-row sm:items-center ${item.link ? 'cursor-pointer' : ''}`}
                   >
                     <div className="flex min-w-0 flex-1 items-start gap-3">
                       <span className={`mt-2 h-2.5 w-2.5 shrink-0 rounded-full ${item.isRead ? "bg-transparent" : "bg-indigo-500"}`} />
@@ -351,11 +389,11 @@ const NotificationsPage: React.FC = () => {
                           {item.source === "club-request" && (
                             <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">ชุมนุม</span>
                           )}
-                          <p className={`min-w-0 flex-1 text-sm leading-6 sm:truncate ${item.isRead ? "text-slate-600 dark:text-slate-400" : "font-bold text-slate-900 dark:text-white"}`}>
+                          <p className={`min-w-0 flex-1 text-sm leading-6 sm:truncate ${item.isRead ? "text-gray-600 dark:text-gray-400" : "font-bold text-gray-900 dark:text-white"}`}>
                             {item.message}
                           </p>
                         </div>
-                        <p className="mt-1 text-xs font-medium text-slate-500">
+                        <p className="mt-1 text-xs font-medium text-gray-500">
                           {formatNotificationTime(item.createdAt.toDate())}
                         </p>
                       </div>
@@ -386,12 +424,13 @@ const NotificationsPage: React.FC = () => {
                           </button>
                         </>
                       ) : item.link ? (
-                        <button onClick={() => openNotification(item)} className="inline-flex items-center gap-1.5 rounded-xl bg-slate-100 px-3.5 py-2 text-xs font-bold text-slate-600 transition hover:bg-indigo-600 hover:text-white dark:bg-white/10 dark:text-slate-300">
+                        <button onClick={() => openNotification(item)} className="inline-flex items-center gap-1.5 rounded-xl bg-gray-100 px-3.5 py-2 text-xs font-bold text-gray-600 transition hover:bg-indigo-600 hover:text-white dark:bg-white/10 dark:text-gray-300">
                           <ExternalLink size={14} /> เปิดดู
                         </button>
                       ) : null}
                     </div>
                   </div>
+                  )
                 ))}
               </div>
             )}

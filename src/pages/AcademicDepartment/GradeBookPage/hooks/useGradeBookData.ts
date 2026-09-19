@@ -101,9 +101,12 @@ const processGradesSnapshot = (
             const m = Number(bestRecord.midterm || 0);
             const fn = Number(bestRecord.final || 0);
             const total = f + m + fn;
-            const isIncomplete = bestRecord.grade === 'ร';
+            const isIncomplete = bestRecord.status === 'ร' || bestRecord.grade === 'ร';
             const naturalGrade = calculateGrade(total);
-            const isResolvedOverride = !isIncomplete && !!bestRecord.grade && bestRecord.grade !== naturalGrade;
+            // ให้เคารพเกรดที่ต่างจาก naturalGrade เฉพาะกรณีที่เป็นผลการแก้ตัวเดิมจริง (มี originalGrade บันทึกไว้จากระบบแก้ตัว)
+            // เท่านั้น — ป้องกันไม่ให้เกรดเก่าค้าง (เช่น เดิมมีคะแนนเก็บ 58 = เกรด 1.5 แต่เมื่อเพิ่มคะแนนกลางภาคเป็น 73 แล้ว
+            // ยังติดเกรด 1.5 เพราะ 1.5 !== 3)
+            const isResolvedRemediation = Boolean(bestRecord.originalGrade && bestRecord.grade && bestRecord.grade !== naturalGrade);
 
             newGrades[targetId] = {
                 ...bestRecord,
@@ -111,7 +114,7 @@ const processGradesSnapshot = (
                 midterm: m,
                 final: fn,
                 total: total,
-                grade: bestRecord.status || (isIncomplete ? 'ร' : (isResolvedOverride ? bestRecord.grade : naturalGrade)),
+                grade: bestRecord.status || (isIncomplete ? 'ร' : (isResolvedRemediation ? bestRecord.grade : naturalGrade)),
                 formativeDetails: combinedDetails
             };
         }

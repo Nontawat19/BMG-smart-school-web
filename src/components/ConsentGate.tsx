@@ -10,60 +10,82 @@ import { privacyPolicySections } from "@/pages/Legal/PrivacyPolicyPage";
 import { termsOfUseSections } from "@/pages/Legal/TermsOfUsePage";
 import { LegalSection } from "@/pages/Legal/LegalPageLayout";
 
-// นักเรียน/ผู้ปกครองที่ล็อกอินผ่าน local session (LoginPage.tsx) ก็ยิง signInAnonymously()
-// ไว้ด้วยเสมอ (ดู studentSession/parentSession) จึงมี request.auth.uid ให้ใช้เหมือนผู้ใช้จริง
-// เกือบทุกกรณี — ฟังก์ชันนี้เป็นแค่ fallback สำรองไว้เผื่อ anonymous sign-in ล้มเหลวจริงๆ เท่านั้น
-const getFallbackConsentKey = (): string | null => {
-  try {
-    const userType = localStorage.getItem("currentUserType");
-    if (userType === "student") {
+import { getOrFetchAcademicYear } from "@/utils/academicYearUtils";
+
+interface ConsentIdentity {
+  consentKey: string;
+  schoolId: string | null;
+  userType: "teacher" | "student" | "parent";
+  refId: string | null;
+  academicYear: string;
+}
+
+/**
+ * ระบุตัวตนผู้ใช้และสร้าง Consent Key ที่ผูกกับตัวตนจริง + ปีการศึกษา
+ * เพื่อให้ผู้ปกครองและนักเรียนคลิกยอมรับเพียง "ปีการศึกษาละ 1 ครั้ง"
+ * แม้จะออกจากระบบหรือเข้าใหม่ (Anonymous Auth UID เปลี่ยน) ก็จะไม่ต้องกดซ้ำ
+ */
+const resolveConsentIdentity = async (
+  reduxSchoolId: string | null | undefined,
+  firebaseUid: string | undefined
+): Promise<ConsentIdentity> => {
+  const userType = localStorage.getItem("currentUserType");
+
+  if (userType === "student") {
+    try {
       const raw = localStorage.getItem("studentSession");
       if (raw) {
         const { schoolId, studentId } = JSON.parse(raw);
-        if (schoolId && studentId) return `local_student_${schoolId}_${studentId}`;
+        if (schoolId && studentId) {
+          const academicYear = await getOrFetchAcademicYear(db, schoolId);
+          return {
+            consentKey: `student_${schoolId}_${studentId}_${academicYear}`,
+            schoolId,
+            userType: "student",
+            refId: studentId,
+            academicYear,
+          };
+        }
       }
-    } else if (userType === "parent") {
+    } catch {
+      // ignore
+    }
+  } else if (userType === "parent") {
+    try {
       const raw = localStorage.getItem("parentSession");
       if (raw) {
-        const { children } = JSON.parse(raw);
+        const parsed = JSON.parse(raw);
+        const { children, phone } = parsed;
         const first = Array.isArray(children) ? children[0] : null;
-        if (first?.schoolId && first?.studentDocId) return `local_parent_${first.schoolId}_${first.studentDocId}`;
+        const schoolId = first?.schoolId || null;
+        const parentId = phone || first?.studentDocId || "default";
+        if (schoolId) {
+          const academicYear = await getOrFetchAcademicYear(db, schoolId);
+          return {
+            consentKey: `parent_${schoolId}_${parentId}_${academicYear}`,
+            schoolId,
+            userType: "parent",
+            refId: parentId,
+            academicYear,
+          };
+        }
       }
+    } catch {
+      // ignore
     }
-  } catch {
-    // ignore malformed session data — ปล่อยให้ null แล้วข้ามไปทาง fail-open ด้านล่าง
   }
-  return null;
-};
 
-interface ConsentContext {
-  schoolId: string | null;
-  userType: "teacher" | "student" | "parent";
-  // refId คือ id ของเอกสารโปรไฟล์จริงใน teachers/{refId} หรือ students/{refId} ของโรงเรียนนั้น —
-  // ให้ getConsentAuditStats (functions/index.js) เอาไปเทียบรายชื่อทั้งโรงเรียนว่าใครยังไม่ยอมรับ
-  // ผู้ปกครองไม่มี id บัญชีของตัวเอง (ล็อกอินด้วยเบอร์โทร+เลขบัตรของบุตร) จึงไม่มี refId ให้ใช้
-  refId: string | null;
-}
-
-// ครู/แอดมิน/ผอ. ทุกตำแหน่งเก็บอยู่ใน collection "teachers" เดียวกันหมดในระบบนี้ (ดู
-// school-settings/{schoolId}/teachers/{uid}) จึงติดป้าย userType เป็น "teacher" ให้บัญชี Firebase
-// จริงทุกแบบเหมือนกัน ไม่แยกย่อยตาม role
-const getConsentContext = (reduxSchoolId: string | null | undefined, firebaseUid: string | undefined): ConsentContext => {
-  try {
-    const userType = localStorage.getItem("currentUserType");
-    if (userType === "student") {
-      const { schoolId, studentId } = JSON.parse(localStorage.getItem("studentSession") || "{}");
-      return { schoolId: schoolId || null, userType: "student", refId: studentId || null };
-    }
-    if (userType === "parent") {
-      const { children } = JSON.parse(localStorage.getItem("parentSession") || "{}");
-      const first = Array.isArray(children) ? children[0] : null;
-      return { schoolId: first?.schoolId || null, userType: "parent", refId: null };
-    }
-  } catch {
-    // ignore malformed session data — ตกไปใช้ค่า default ของบัญชีจริงด้านล่าง
-  }
-  return { schoolId: reduxSchoolId || null, userType: "teacher", refId: firebaseUid || null };
+  // ครู/แอดมิน ที่มีบัญชี Firebase จริง
+  const schoolId = reduxSchoolId || null;
+  const uid = firebaseUid || "anonymous";
+  const academicYear = await getOrFetchAcademicYear(db, schoolId);
+  return {
+    consentKey: `teacher_${uid}_${academicYear}`,
+    schoolId,
+    userType: "teacher",
+    refId: uid,
+    academicYear,
+  };
 };
 
 type Status = "checking" | "needed" | "granted";
@@ -102,8 +124,7 @@ const FullDocument: React.FC<{ title: string; href: string; sections: LegalSecti
 const ConsentGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const reduxSchoolId = useSelector((state: RootState) => state.auth.user?.schoolId || state.auth.user?.homeSchoolId || null);
   const [status, setStatus] = useState<Status>("checking");
-  const [consentKey, setConsentKey] = useState<string | null>(null);
-  const [firebaseUid, setFirebaseUid] = useState<string | undefined>(undefined);
+  const [consentIdentity, setConsentIdentity] = useState<ConsentIdentity | null>(null);
   const [accepted, setAccepted] = useState(false);
   const [hasReadToEnd, setHasReadToEnd] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -117,27 +138,54 @@ const ConsentGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     let isMounted = true;
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      const key = firebaseUser?.uid || getFallbackConsentKey();
+      const identity = await resolveConsentIdentity(reduxSchoolId, firebaseUser?.uid);
 
-      // ไม่พบตัวตนผู้ใช้เลย (ไม่ควรเกิดขึ้นถ้า ProtectedRoute ยืนยัน isAuthenticated แล้ว) —
-      // ปล่อยผ่านแทนที่จะล็อกหน้าจอค้าง เพราะ auth guard ตัวจริงอยู่ที่ ProtectedRoute อยู่แล้ว
-      if (!key) {
+      if (!identity.consentKey) {
         if (isMounted) setStatus("granted");
         return;
       }
 
       if (isMounted) {
-        setConsentKey(key);
-        setFirebaseUid(firebaseUser?.uid);
+        setConsentIdentity(identity);
+      }
+
+      // 1. ตรวจสอบจาก Local Cache ก่อนเพื่อความรวดเร็ว
+      const localAccepted = localStorage.getItem(`consent_accepted_${identity.consentKey}`);
+      if (localAccepted === "true") {
+        if (isMounted) setStatus("granted");
+        return;
       }
 
       try {
-        const snap = await getDoc(doc(db, "consents", key));
-        const data = snap.exists() ? snap.data() : null;
+        // 2. ตรวจสอบจาก Firestore consents/{consentKey}
+        const snap = await getDoc(doc(db, "consents", identity.consentKey));
+        let data = snap.exists() ? snap.data() : null;
+
+        // Backward compatibility สำหรับครูที่เคยกดยอมรับใน consents/{firebaseUid}
+        if (!data && firebaseUser?.uid && identity.userType === "teacher") {
+          const legacySnap = await getDoc(doc(db, "consents", firebaseUser.uid));
+          if (legacySnap.exists()) {
+            const legacyData = legacySnap.data();
+            if (
+              legacyData?.privacyPolicyVersion === PRIVACY_POLICY_VERSION &&
+              legacyData?.termsOfUseVersion === TERMS_OF_USE_VERSION &&
+              (legacyData?.academicYear === identity.academicYear || !legacyData?.academicYear)
+            ) {
+              data = legacyData;
+            }
+          }
+        }
+
         const hasCurrentConsent =
           data?.privacyPolicyVersion === PRIVACY_POLICY_VERSION &&
           data?.termsOfUseVersion === TERMS_OF_USE_VERSION;
-        if (isMounted) setStatus(hasCurrentConsent ? "granted" : "needed");
+
+        if (hasCurrentConsent) {
+          localStorage.setItem(`consent_accepted_${identity.consentKey}`, "true");
+          if (isMounted) setStatus("granted");
+        } else {
+          if (isMounted) setStatus("needed");
+        }
       } catch (error) {
         console.error("Error checking consent status:", error);
         // fail-open: อย่าให้ปัญหาเครือข่ายชั่วคราวล็อกผู้ใช้ทั้งระบบออกจากระบบพร้อมกัน
@@ -149,7 +197,7 @@ const ConsentGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       isMounted = false;
       unsubscribe();
     };
-  }, []);
+  }, [reduxSchoolId]);
 
   // เนื้อหาสั้นกว่ากล่อง (ไม่มีสกอร์ลให้เลื่อน เช่นจอสูง) ถือว่าเห็นครบตั้งแต่แรกแล้ว — เช็คใหม่ทุกครั้งที่
   // กล่องนี้ถูก mount (status เปลี่ยนเป็น "needed") เพราะ ref ยังไม่มีตัวจริงตอน status เป็น "checking"
@@ -162,23 +210,26 @@ const ConsentGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }, [status]);
 
   const handleAccept = async () => {
-    if (!consentKey || !accepted || isSaving) return;
+    if (!consentIdentity || !accepted || isSaving) return;
     setIsSaving(true);
     try {
-      const { schoolId, userType, refId } = getConsentContext(reduxSchoolId, firebaseUid);
+      const { consentKey, schoolId, userType, refId, academicYear } = consentIdentity;
       await setDoc(
         doc(db, "consents", consentKey),
         {
           privacyPolicyVersion: PRIVACY_POLICY_VERSION,
           termsOfUseVersion: TERMS_OF_USE_VERSION,
+          academicYear,
           acceptedAt: serverTimestamp(),
           userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null,
           schoolId,
           userType,
           refId,
+          authUid: auth.currentUser?.uid || null,
         },
         { merge: true }
       );
+      localStorage.setItem(`consent_accepted_${consentKey}`, "true");
       setStatus("granted");
     } catch (error) {
       console.error("Error saving consent:", error);

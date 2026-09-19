@@ -10,7 +10,7 @@ import { firestore, auth } from "@/firebase";
 import { signOut } from "firebase/auth";
 import { doc, getDoc, Timestamp, collection, query, where, getDocs, documentId, runTransaction, arrayUnion, increment, arrayRemove, addDoc, serverTimestamp, deleteDoc, orderBy, onSnapshot, updateDoc, collectionGroup, writeBatch } from "firebase/firestore";
 import Swal from 'sweetalert2';
-import { FaPen, FaArrowLeft, FaChalkboard, FaUser, FaUsers, FaBook, FaBookOpen, FaChevronRight, FaChevronLeft, FaChevronDown, FaClock, FaFlag, FaSignOutAlt, FaSun, FaMoon, FaBars, FaTimes, FaUserPlus, FaExchangeAlt, FaHourglassHalf, FaPlane, FaIdCard, FaMapMarkerAlt, FaHeartbeat, FaBus, FaGraduationCap, FaEye, FaEyeSlash, FaFilePdf, FaCheckCircle, FaCheck, FaShieldAlt, FaBell, FaClipboardList } from "react-icons/fa";
+import { FaPen, FaArrowLeft, FaChalkboard, FaUser, FaUsers, FaBook, FaBookOpen, FaChevronRight, FaChevronLeft, FaChevronDown, FaClock, FaFlag, FaSignOutAlt, FaSun, FaMoon, FaBars, FaTimes, FaUserPlus, FaExchangeAlt, FaHourglassHalf, FaPlane, FaIdCard, FaMapMarkerAlt, FaHeartbeat, FaBus, FaGraduationCap, FaEye, FaEyeSlash, FaFilePdf, FaCheckCircle, FaCheck, FaShieldAlt, FaBell, FaClipboardList, FaAward } from "react-icons/fa";
 import { pdf } from '@react-pdf/renderer';
 import LeaveRequestPdfDocument from '@/components/Pdf/leave/LeaveRequestPdfDocument';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
@@ -23,6 +23,8 @@ import { formatClassLevelRange, isClassLevelInRange, CLASSES, getGroupPersonnel 
 import StudentScheduleEmbed from "./StudentScheduleEmbed";
 import StudentBehaviorHistoryEmbed from "./StudentBehaviorHistoryEmbed";
 import StudentSDQParentEmbed from "./StudentSDQParentEmbed";
+import StudentAcademicGradesTab from "../Profile/components/StudentAcademicGradesTab";
+import StudentActivitiesEvaluationTab from "../Profile/components/StudentActivitiesEvaluationTab";
 
 // --- Type Definition ---
 interface StudentData {
@@ -466,8 +468,10 @@ export default function ViewStudentPage() {
 
   const tabs = [
     { id: "general", label: "ข้อมูลทั่วไป", icon: <FaIdCard /> },
+    { id: "academic_grades", label: "ผลการเรียน", icon: <FaGraduationCap /> },
+    { id: "activities_evaluation", label: "กิจกรรมพัฒนาผู้เรียน", icon: <FaAward /> },
     { id: "academic", label: "การศึกษา", icon: <FaGraduationCap /> },
-    { id: "attendance", label: "สถาติการมาเรียน", icon: <FaClock /> },
+    { id: "attendance", label: "สถิติการมาเรียน", icon: <FaClock /> },
     { id: "courses", label: "รายวิชาที่เรียน", icon: <FaBook /> },
     { id: "schedule", label: "ตารางเรียน", icon: <FaChalkboard /> },
     { id: "behavior", label: "คะแนนพฤติกรรม", icon: <FaShieldAlt /> },
@@ -2008,6 +2012,26 @@ export default function ViewStudentPage() {
                         </>
                       );
                     })()}
+                  </div>
+                )}
+
+                {activeTab === "academic_grades" && student && schoolId && studentId && (
+                  <div className="animate-fade-in">
+                    <StudentAcademicGradesTab
+                      schoolId={schoolId}
+                      studentId={studentId}
+                      studentData={student}
+                    />
+                  </div>
+                )}
+
+                {activeTab === "activities_evaluation" && student && schoolId && studentId && (
+                  <div className="animate-fade-in">
+                    <StudentActivitiesEvaluationTab
+                      schoolId={schoolId}
+                      studentId={studentId}
+                      studentData={student}
+                    />
                   </div>
                 )}
 

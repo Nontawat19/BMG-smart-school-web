@@ -32,7 +32,6 @@ import {
   FaBriefcase,
   FaHandHoldingHeart,
   FaMoneyBillWave,
-  FaCommentDots,
   FaPlane,
   FaFileExcel,
   FaBookOpen,
@@ -82,7 +81,9 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
     !normalizedRoles.includes(ROLES.TEACHER_ATTENDANCE) &&
     !normalizedRoles.includes(ROLES.SCHOOL_ATTENDANCE);
 
-  const isStudent = normalizedRoles.includes(ROLES.STUDENT);
+  // NEW: ผู้ปกครอง login แบบ local session ได้ role เป็น 'parent' ตรงๆ (ไม่ใช่ ROLES.STUDENT) —
+  // เดิมเช็คแค่ ROLES.STUDENT ทำให้ผู้ปกครองหลุดไปเจอเมนูเต็มรูปแบบของบุคลากรแทนเมนูแบบจำกัดสิทธิ์
+  const isStudent = normalizedRoles.includes(ROLES.STUDENT) || normalizedRoles.includes('parent');
 
   // ฟังก์ชันสำหรับสร้าง className ของ NavLink
   const navLinkClasses = ({ isActive }: { isActive: boolean }) =>

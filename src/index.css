@@ -66,11 +66,19 @@
     caret-color: var(--form-caret-color) !important;
   }
 
-  input:focus,
-  textarea:focus,
-  select:focus {
+  input:focus:not(.no-focus-ring),
+  textarea:focus:not(.no-focus-ring),
+  select:focus:not(.no-focus-ring) {
     outline: none !important;
     box-shadow: 0 0 0 1px var(--form-focus-color) !important;
+  }
+
+  .no-focus-ring,
+  .no-focus-ring:focus,
+  .no-focus-ring:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+    border-color: transparent !important;
   }
 
   button {
@@ -238,12 +246,14 @@
 @layer utilities {
 
   /* Hide scrollbar for Chrome, Safari and Opera */
-  .scrollbar-hide::-webkit-scrollbar {
+  .scrollbar-hide::-webkit-scrollbar,
+  .no-scrollbar::-webkit-scrollbar {
     display: none !important;
   }
 
   /* Hide scrollbar for IE, Edge and Firefox */
-  .scrollbar-hide {
+  .scrollbar-hide,
+  .no-scrollbar {
     -ms-overflow-style: none !important;
     /* IE and Edge */
     scrollbar-width: none !important;

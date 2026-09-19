@@ -49,6 +49,17 @@ service cloud.firestore {
       return isAuthenticated() && hasRole('school_admin');
     }
 
+    // NEW: ห้องแชทฝ่ายงาน (dept-academic ฯลฯ) มี id ตายตัวที่ทุกคนรู้อยู่แล้วจากซอร์สโค้ด (ต่างจาก
+    // parent-*/group-*/student-* ที่ id เดายากและใช้ความเดายากนั้นเป็นตัวคุมสิทธิ์แทน) จึงต้องพิสูจน์
+    // ตัวตนจริงจากรายชื่อสมาชิก memberUids — ถ้ายังไม่มี field นี้เลย (ห้องเก่ายังไม่ผ่านการเพิ่มสมาชิก
+    // ใหม่) get().data.memberUids จะเป็น null และ "uid in null" จะเป็นเท็จเสมอ = ยังไม่มีใครเป็นสมาชิก
+    // เลยจนกว่าจะมีคนถูกเพิ่มเข้ามาจริง ตรงตามที่ต้องการ (ห้องเดิมเริ่มว่างเปล่า ต้องเพิ่มคนใหม่ทั้งหมด)
+    function isDeptChatMember(schoolId, roomId) {
+      return isRealAuth()
+        && exists(/databases/$(database)/documents/school-settings/$(schoolId)/chatRooms/$(roomId))
+        && request.auth.uid in get(/databases/$(database)/documents/school-settings/$(schoolId)/chatRooms/$(roomId)).data.memberUids;
+    }
+
     // 1. School Settings - Root Access
     match /school-settings/{schoolId} {
       allow read: if true;
@@ -219,6 +230,122 @@ service cloud.firestore {
       match /notifications/{notificationId} {
         allow read, write: if isRealAuth();
       }
+      // NEW: ระบบแชท (ChatListPage/ChatRoomPage) — ห้องแชทหลักโรงเรียน/ฝ่ายงาน เปิดให้บุคลากรจริง
+      // (isRealAuth) เท่านั้น ส่วนห้อง "parent-{studentId}" ต้องเปิดให้ผู้ปกครอง (anonymous auth
+      // ผ่าน local session ตาม LoginPage.tsx) เข้าอ่าน/เขียนได้ด้วย — ผู้ปกครองไม่มี uid คงที่ให้
+      // เช็คเป็นรายคน จึงอิงตามแพทเทิร์นเดียวกับ isAnonymousLineParentUpdate() ด้านบน คือเชื่อว่า
+      // studentId ที่เป็นส่วนหนึ่งของ roomId (Firestore auto-id 20 ตัวอักษร) เดายากพอที่จะใช้แทน
+      // การพิสูจน์ตัวตนแบบเข้มงวด เหมือนกับ student-lookups/{hashedId} ที่ใช้หลักการเดียวกัน
+      //
+      // NEW: ห้อง "student-direct-{teacherUid}_{studentId}" (แชทครู-นักเรียนรายบุคคล) ใช้หลักการ
+      // เดียวกับ parent-* คือเปิดให้ anonymous (นักเรียน) เข้าอ่าน/สร้าง/แก้ไขได้ แต่บังคับว่า
+      // create/update จาก anonymous ต้องตั้ง status เป็น 'pending' เท่านั้น (ขอ/ขอใหม่ได้ อนุมัติเองไม่ได้)
+      // ส่วนการอนุมัติ/ปฏิเสธจริง (เปลี่ยนเป็น approved/rejected) ต้องเป็น isRealAuth (ครู) เท่านั้น
+      //
+      // NEW: ห้อง "student-homeroom-{studentId}" (แชทครูประจำชั้น ↔ ตัวนักเรียนเอง) เปิดคุยได้เลย
+      // ไม่ต้องขออนุญาต ใช้หลักการเดียวกับ parent-* ทุกอย่าง (คู่กันแค่ต่างฝั่งเข้า)
+      //
+      // NEW: ห้อง "group-{randomId}" (กลุ่มแชทที่ครูสร้างเอง เช่น กลุ่มผู้ปกครองของห้องเรียน) — สร้าง/
+      // เพิ่ม-ลบสมาชิก (memberStudentIds) ได้เฉพาะ isRealAuth() (ครู) เท่านั้น ผู้ปกครอง (anonymous)
+      // อ่าน+ส่งข้อความได้ แต่แก้ไขเอกสารห้องได้แค่ field ที่เกี่ยวกับการส่งข้อความ/มาร์คอ่านแล้วเท่านั้น
+      // ห้ามแตะ memberStudentIds/groupName/createdByUid ป้องกันไม่ให้ผู้ปกครองปลอมแปลงสมาชิกกลุ่ม
+      //
+      // NEW: ห้อง "dept-*" (แชทฝ่ายงาน) เปลี่ยนจากเปิดกว้างทุกคน มาเป็นจำกัดสิทธิ์ตาม memberUids —
+      // เจ้าหน้าที่ "ทุกคน" เพิ่มเพื่อนร่วมงาน (หรือตัวเอง) เข้าห้องไหนก็ได้โดยไม่ต้องเป็นสมาชิกก่อน (ตั้งใจ
+      // เปิดกว้างแบบนี้) แต่การอ่าน/ส่งข้อความจริงต้องเป็นสมาชิก (อยู่ใน memberUids) แล้วเท่านั้น
+      match /chatRooms/{roomId} {
+        allow get: if (isRealAuth() && (!roomId.matches('dept-.*') || isDeptChatMember(schoolId, roomId)))
+          || (isAnonymousUser() && (roomId.matches('parent-.*') || roomId.matches('student-homeroom-.*') || roomId.matches('student-direct-.*') || roomId.matches('group-.*')));
+        allow list: if isRealAuth()
+          || (isAnonymousUser() && resource.data.type == 'student-direct');
+        allow create, update: if isRealAuth()
+          || (isAnonymousUser() && (roomId.matches('parent-.*') || roomId.matches('student-homeroom-.*')))
+          || (isAnonymousUser() && roomId.matches('student-direct-.*') && request.resource.data.status == 'pending')
+          // NEW: ห้อง student-direct ที่ครูอนุมัติแล้ว (status == 'approved') นักเรียน (anonymous)
+          // ต้องเขียน field "readBy" (มาร์คว่าอ่านแล้ว สำหรับ badge จำนวนแชทที่ยังไม่อ่าน) ได้ด้วย
+          // แต่ห้ามแตะ field อื่น (โดยเฉพาะ status) — จำกัดด้วย affectedKeys().hasOnly(['readBy'])
+          || (isAnonymousUser() && roomId.matches('student-direct-.*')
+              && resource.data.status == 'approved'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']))
+          || (isAnonymousUser() && roomId.matches('group-.*')
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageText', 'lastMessageAt', 'lastMessageSenderUid', 'readBy']));
+        allow delete: if isRealAuth();
+
+        match /messages/{messageId} {
+          allow read: if (isRealAuth() && (!roomId.matches('dept-.*') || isDeptChatMember(schoolId, roomId)))
+            || (isAnonymousUser() && (roomId.matches('parent-.*') || roomId.matches('student-homeroom-.*') || roomId.matches('student-direct-.*') || roomId.matches('group-.*')));
+          // NEW: นอกจากข้อความตัวหนังสือ (type == 'text', เดิม) ยังรองรับสติกเกอร์ (stickerId ชี้ไป
+          // ไฟล์ภาพที่ bundle มากับแอปเอง ไม่ใช่ URL ที่ผู้ใช้กำหนดเอง) และ GIF (gifUrl มาจาก Klipy
+          // API ฝั่ง client — บังคับแค่ https และลงท้าย .gif/.webp กันไม่ให้ฝัง URL รูปภาพ/tracking
+          // pixel โดเมนอื่นมาแอบอ้างเป็น "GIF" ได้ ไม่ผูกกับโดเมน CDN ตายตัวเพราะยืนยันไม่ได้ชัดเจน)
+          //
+          // NEW: type == 'image' (ถ่ายรูปจากกล้องในแชท) imageUrl ต้องเป็นลิงก์จาก Firebase Storage
+          // เท่านั้น (บังคับโดเมน firebasestorage.googleapis.com) storagePath เก็บไว้ให้ Cloud Function
+          // cleanupExpiredChatImages ใช้ลบไฟล์จริงออกจาก Storage ตอนครบอายุ ~1 ปีการศึกษา
+          //
+          // NEW: type == 'document' (ส่ง/แชร์เอกสาร PDF ที่มีอยู่ในระบบ) อ้างอิง pdfUrl เดิม ไม่ต้องอัปโหลดซ้ำ
+          allow create: if (
+              (isRealAuth() && (!roomId.matches('dept-.*') || isDeptChatMember(schoolId, roomId) || request.resource.data.type == 'document'))
+              || (isAnonymousUser() && (roomId.matches('parent-.*') || roomId.matches('student-homeroom-.*') || roomId.matches('student-direct-.*') || roomId.matches('group-.*')))
+            )
+            && request.resource.data.keys().hasAll(['senderUid', 'senderName', 'senderRole', 'createdAt'])
+            && (
+              (
+                request.resource.data.get('type', 'text') == 'text'
+                && request.resource.data.text is string
+                && request.resource.data.text.size() > 0
+                && request.resource.data.text.size() <= 2000
+              )
+              || (
+                request.resource.data.type == 'sticker'
+                && request.resource.data.stickerId is string
+                && request.resource.data.stickerId.size() > 0
+                && request.resource.data.stickerId.size() <= 50
+              )
+              || (
+                request.resource.data.type == 'gif'
+                && request.resource.data.gifUrl is string
+                && request.resource.data.gifUrl.size() <= 500
+                && request.resource.data.gifUrl.matches('https://.+[.](gif|webp)(\\?.*)?')
+              )
+              || (
+                request.resource.data.type == 'image'
+                && request.resource.data.imageUrl is string
+                && request.resource.data.imageUrl.size() <= 500
+                && request.resource.data.imageUrl.matches('https://firebasestorage[.]googleapis[.]com/.*')
+                && request.resource.data.storagePath is string
+                && request.resource.data.storagePath.size() > 0
+                && request.resource.data.storagePath.size() <= 300
+              )
+              || (
+                request.resource.data.type == 'document'
+                && request.resource.data.pdfUrl is string
+                && request.resource.data.pdfUrl.size() > 0
+                && request.resource.data.pdfUrl.size() <= 3000
+                && request.resource.data.documentName is string
+                && request.resource.data.documentName.size() > 0
+                && request.resource.data.documentName.size() <= 1000
+              )
+              || (
+                request.resource.data.type == 'attendance'
+                && request.resource.data.attendance is map
+              )
+            )
+            // ห้อง student-direct ต้องรอครูอนุมัติ (status == 'approved') ก่อนถึงจะส่งข้อความได้จริง
+            && (
+              !roomId.matches('student-direct-.*')
+              || get(/databases/$(database)/documents/school-settings/$(schoolId)/chatRooms/$(roomId)).data.status == 'approved'
+            );
+          allow update, delete: if false;
+        }
+      }
+
+      // สถานะออนไลน์ (Presence) ของครู นักเรียน และผู้ปกครอง
+      match /presence/{userId} {
+        allow read: if true;
+        allow write: if isAuthenticated();
+      }
+
       match /physical-rooms/{docId} {
         // NEW: นักเรียน/ผู้ปกครอง (anonymous auth) ต้องอ่านชื่อห้องเรียนเพื่อแสดงตารางสอนที่
         // /academic/my-schedule (MySchedulePage.tsx) — เดิม isRealAuth() กันนักเรียนออกไปด้วย ทำให้
@@ -387,12 +514,17 @@ service cloud.firestore {
 
     // 4.6 Consents — บันทึกการยอมรับนโยบายความเป็นส่วนตัว/ข้อกำหนดการใช้บริการ (ConsentGate.tsx)
     // เก็บ 1 เอกสารต่อ uid ทั้งผู้ใช้จริง (ครู/แอดมิน) และ anonymous session (นักเรียน/ผู้ปกครองที่
-    // ล็อกอินผ่าน local session + signInAnonymously) — ต้องอนุญาต anonymous ด้วย ไม่ใช้ isRealAuth()
-    // เพราะ global fallback ด้านล่างกัน anonymous ออกหมด แต่ต้องให้นักเรียน/ผู้ปกครองบันทึกความยินยอม
-    // ของตัวเองได้ อ่าน/เขียนได้เฉพาะเอกสารของ uid ตัวเองเท่านั้น
+    // 4.5. PDPA/Terms Consent (ทั้งครู/แอดมินที่มีบัญชีจริง และนักเรียน/ผู้ปกครองที่
+    // ล็อกอินผ่าน local session + signInAnonymously) — อนุญาตให้อ่านและบันทึกความยินยอม
+    // ผูกตามตัวตนจริงและปีการศึกษา (student_*, parent_*, teacher_* หรือตาม uid)
     match /consents/{consentId} {
-      allow read: if isRealAuth() || (request.auth != null && request.auth.uid == consentId);
-      allow write: if request.auth != null && request.auth.uid == consentId;
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (
+        request.auth.uid == consentId ||
+        consentId.matches('^student_.*') ||
+        consentId.matches('^parent_.*') ||
+        consentId.matches('^teacher_.*')
+      );
     }
 
     // 5. Global fallback

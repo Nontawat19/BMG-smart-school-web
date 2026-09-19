@@ -10,6 +10,7 @@ import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import Swal from "sweetalert2";
 import SkeletonLoader from "@/components/SkeletonLoader";
 import DocumentCardSkeleton from "@/components/DocumentCardSkeleton";
+import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
 
 // --- Interfaces ---
 interface AssignedDocument {
@@ -206,26 +207,66 @@ const AssignedWorkPage: React.FC = () => {
   const [documents, setDocuments] = useState<AssignedDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Department>("all");
+  const scopedSchoolId = useEffectiveSchoolId();
   const [filterId, setFilterId] = useState<string | null>(null);
+  const [filterReceiveNo, setFilterReceiveNo] = useState<string | null>(null);
+  const [filterPdfUrl, setFilterPdfUrl] = useState<string | null>(null);
+  const [shouldAutoOpen, setShouldAutoOpen] = useState(false);
   const [schoolId, setSchoolId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const id = params.get("id");
-    if (id) {
-      setFilterId(id);
-      setActiveTab("all");
-    } else {
-      setFilterId(null);
-    }
-  }, [location.search]);
-
   // State for PDF Viewer Modal
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<AssignedDocument | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const id = params.get("id");
+    const receiveNo = params.get("receiveNo");
+    const pdfUrl = params.get("pdfUrl");
+    const subject = params.get("subject");
+    const autoOpen = params.get("autoOpen") === "true" || !!id || !!receiveNo || !!pdfUrl;
+
+    setFilterId(id);
+    setFilterReceiveNo(receiveNo);
+    setFilterPdfUrl(pdfUrl);
+    setShouldAutoOpen(autoOpen);
+
+    if (id || receiveNo || pdfUrl) {
+      setActiveTab("all");
+    }
+
+    // ⚡ เปิดดู PDF ทันทีแบบ Instant (0ms) ถ้ามี pdfUrl และ autoOpen
+    if (autoOpen && pdfUrl) {
+      setSelectedDoc({
+        id: id || "direct-view",
+        receiveNo: receiveNo || "-",
+        subject: subject || "เอกสารมอบหมายงาน",
+        pdfUrl: pdfUrl,
+        status: "approved",
+      });
+      setIsViewerOpen(true);
+    }
+  }, [location.search]);
+
+  // เมื่อโหลด documents ในหน้านี้เสร็จแล้ว ให้แมตช์หาเอกสารที่สมบูรณ์ที่สุดจากฐานข้อมูล
+  useEffect(() => {
+    if (documents.length > 0 && (filterId || filterReceiveNo || filterPdfUrl)) {
+      let target: AssignedDocument | undefined;
+      if (filterId) target = documents.find(d => d.id === filterId);
+      if (!target && filterReceiveNo) target = documents.find(d => d.receiveNo === filterReceiveNo || d.receiveNo?.includes(filterReceiveNo));
+      if (!target && filterPdfUrl) target = documents.find(d => d.pdfUrl === filterPdfUrl);
+
+      if (target) {
+        setSelectedDoc(target);
+        if (shouldAutoOpen) {
+          setIsViewerOpen(true);
+        }
+      }
+    }
+  }, [filterId, filterReceiveNo, filterPdfUrl, documents, shouldAutoOpen]);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
@@ -242,11 +283,12 @@ const AssignedWorkPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const targetSchoolId = schoolId || scopedSchoolId;
+    if (!targetSchoolId) return;
     const fetchDocuments = async () => {
-      if (!schoolId) return;
       setIsLoading(true);
       try {
-        const docsRef = collection(firestore, "school-settings", schoolId, "stampedDocuments");
+        const docsRef = collection(firestore, "school-settings", targetSchoolId, "stampedDocuments");
         const q = query(docsRef, where("status", "==", "approved"));
         const querySnapshot = await getDocs(q);
 
@@ -265,19 +307,25 @@ const AssignedWorkPage: React.FC = () => {
       }
     };
     fetchDocuments();
-  }, [schoolId]);
+  }, [schoolId, scopedSchoolId]);
 
   const filteredDocuments = useMemo(() => {
     return documents.filter(doc => {
       if (filterId) {
         return doc.id === filterId;
       }
+      if (filterReceiveNo) {
+        return doc.receiveNo === filterReceiveNo || doc.receiveNo?.includes(filterReceiveNo);
+      }
+      if (filterPdfUrl) {
+        return doc.pdfUrl === filterPdfUrl;
+      }
       const matchTab = activeTab === "all" || doc.assignments?.[activeTab] === true;
       const matchSearch = (doc.subject?.toLowerCase().includes(searchTerm.toLowerCase())) || 
                           (doc.receiveNo?.toLowerCase().includes(searchTerm.toLowerCase()));
       return matchTab && matchSearch;
     });
-  }, [documents, activeTab, searchTerm, filterId]);
+  }, [documents, activeTab, searchTerm, filterId, filterReceiveNo, filterPdfUrl]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -491,6 +539,23 @@ const AssignedWorkPage: React.FC = () => {
                   <h2 className="text-sm font-black text-white">ธุรการมอบหมายแล้ว ({filteredDocuments.length} รายการ)</h2>
                 </div>
               </div>
+
+              {(filterId || filterReceiveNo || filterPdfUrl) && (
+                <div className="mb-6 flex items-center justify-between bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 rounded-xl px-4 py-2.5 text-sm text-indigo-700 dark:text-indigo-300">
+                  <span className="font-medium">📌 กำลังแสดงเฉพาะเอกสารที่เปิดจากลิงก์แชท {selectedDoc?.receiveNo ? `(เลขรับ: ${selectedDoc.receiveNo})` : ""}</span>
+                  <button
+                    onClick={() => {
+                      setFilterId(null);
+                      setFilterReceiveNo(null);
+                      setFilterPdfUrl(null);
+                      setShouldAutoOpen(false);
+                    }}
+                    className="text-xs font-bold underline hover:text-indigo-900 dark:hover:text-indigo-100 transition cursor-pointer"
+                  >
+                    ดูเอกสารมอบหมายทั้งหมด
+                  </button>
+                </div>
+              )}
 
               <div className="mb-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div>

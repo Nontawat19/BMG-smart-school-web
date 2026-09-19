@@ -107,13 +107,18 @@ export const fetchTeachersMap = createAsyncThunk(
       // มาช่วย merge — ข้อมูลหลักจาก teachers/{id} ยังอ่านได้ปกติเพราะ rule เปิด read ให้ทุกคนอยู่แล้ว
       // (แยก try/catch จาก teachersSnapshot ด้านบน ไม่ให้การถูกปฏิเสธ query นี้ทำให้ทั้งฟังก์ชัน reject)
       let usersDocs: { id: string; data: () => any }[] = [];
-      try {
-        const usersCollectionRef = collection(firestore, 'users');
-        const usersQuery = query(usersCollectionRef, where("schoolId", "==", schoolId));
-        const usersSnapshot = await getDocs(usersQuery);
-        usersDocs = usersSnapshot.docs;
-      } catch (usersError) {
-        console.warn("fetchTeachersMap: skipping /users merge (no permission for this session):", usersError);
+      const userType = localStorage.getItem('currentUserType');
+      const isStudentOrParent = userType === 'student' || userType === 'parent';
+
+      if (!isStudentOrParent) {
+        try {
+          const usersCollectionRef = collection(firestore, 'users');
+          const usersQuery = query(usersCollectionRef, where("schoolId", "==", schoolId));
+          const usersSnapshot = await getDocs(usersQuery);
+          usersDocs = usersSnapshot.docs;
+        } catch (usersError) {
+          console.debug("fetchTeachersMap: skipping /users merge:", usersError);
+        }
       }
 
       const teachersData: { [id: string]: Teacher } = {};

@@ -114,6 +114,7 @@ interface SchoolInfo {
     flagCeremony?: boolean;
     classroomAttendance?: boolean;
     dailyAttendanceCheck?: boolean;
+    chat?: boolean;
   };
 }
 
@@ -1847,6 +1848,7 @@ const SchoolInfoPage: React.FC = () => {
                       { key: 'flagCeremony', label: 'ระบบเช็คแถว', desc: 'เช็คชื่อกิจกรรมเข้าแถวเคารพธงชาติ (หน้า "เช็คชื่อกิจกรรมเข้าแถว")' },
                       { key: 'classroomAttendance', label: 'ระบบเช็คขาดคาบ', desc: 'เช็คชื่อรายวิชา/เช็คขาดคาบเรียน รวมถึงประวัติ สรุปผล และตรวจเช็คการเข้าสอนของครู' },
                       { key: 'dailyAttendanceCheck', label: 'ระบบเช็คชื่อมาเรียน (ไม่ใช้สแกน)', desc: 'ให้ครูประจำชั้นเช็คชื่อมาเรียนของนักเรียนเองรายวัน เหมาะกับโรงเรียนที่ไม่เปิดใช้สแกนบัตร/สแกนหน้า' },
+                      { key: 'chat', label: 'ระบบแชท', desc: 'แชทหลักของโรงเรียน, แชทฝ่ายงาน, แชทครูประจำชั้น-ผู้ปกครอง/นักเรียน, กลุ่มแชท (ไอคอนแชทที่ Navbar)' },
                     ].map((feature) => (
                       <div key={feature.key} className="flex items-center justify-between p-5 bg-gray-50 dark:bg-[#1e1f21] rounded-2xl border border-gray-100 dark:border-gray-800 hover:border-indigo-200 dark:hover:border-indigo-800 transition-all">
                         <div className="flex items-center gap-4">

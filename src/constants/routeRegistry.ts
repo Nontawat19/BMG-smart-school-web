@@ -51,6 +51,9 @@ export const ROUTE_REGISTRY: RouteDefinition[] = [
   // ──────────────────────────────── ทั่วไป ────────────────────────────────
   { key: 'home',          path: '/home',          label: 'หน้าหลัก',        category: 'ทั่วไป', defaultRoles: ALL_ROLES },
   { key: 'notifications', path: '/notifications', label: 'การแจ้งเตือน',    category: 'ทั่วไป', defaultRoles: ALL_ROLES },
+  { key: 'classroom_chat', path: '/notifications/classroom-chat', label: 'ห้องแชทรายชั้น', category: 'ทั่วไป', defaultRoles: ALL_ROLES },
+  { key: 'chat_list',      path: '/chat',                        label: 'แชท',              category: 'ทั่วไป', defaultRoles: ALL_ROLES },
+  { key: 'chat_room',      path: '/chat/:roomId',                label: 'ห้องแชท',           category: 'ทั่วไป', defaultRoles: ALL_ROLES },
   { key: 'profile',       path: '/profile',       label: 'โปรไฟล์',         category: 'ทั่วไป', defaultRoles: ALL_ROLES },
   { key: 'my_schedule',   path: '/my-schedule',   label: 'ตารางงานของฉัน',  category: 'ทั่วไป', defaultRoles: [...STAFF_ACCESS, ROLES.STUDENT] },
   { key: 'user_manuals',  path: '/academic/user-manuals', label: 'คู่มือการใช้งานระบบ', category: 'ทั่วไป', defaultRoles: ALL_ROLES },

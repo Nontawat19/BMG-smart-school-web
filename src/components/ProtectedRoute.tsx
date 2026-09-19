@@ -139,6 +139,8 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
       '/student-support/screening/student',
       '/student-support/sdq/parent',
       '/student-support/screening/parent',
+      '/chat',
+      '/notifications/classroom-chat',
     ];
     const isAllowed = allowedPaths.some(p => location.pathname === p || location.pathname.startsWith(p + '/'));
     if (!isAllowed) {

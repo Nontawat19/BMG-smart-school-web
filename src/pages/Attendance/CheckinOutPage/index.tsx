@@ -27,6 +27,7 @@ import { RootState } from "../../../store";
 import { isNonOfficialHoliday } from "../../../utils/calendarUtils";
 import { FoundUser } from "./types";
 import { sendLineAttendanceNotification, sendTeacherLineAttendanceNotification } from "./AttendanceLineNotify";
+import { notifyHomeroomTeachersInApp, notifyParentInApp, notifyParentInChat } from "./AttendanceInAppNotify";
 import { deg2rad, getDistanceFromLatLonInM, isPointInPolygon, getStatusKey } from "./utils";
 import HolidayBanner from "./HolidayBanner";
 import AutoFitHeading from "./AutoFitHeading";
@@ -1529,6 +1530,7 @@ const CheckinOutPage: React.FC = () => {
 
       let finalConfig: any = null;
       const teacherRecipientUserIds: string[] = [];
+      const homeroomTeacherUids: string[] = [];
 
       if (user.grade) {
         const homeroom = splitHomeroom(user.grade, user.room);
@@ -1591,6 +1593,8 @@ const CheckinOutPage: React.FC = () => {
             finalConfig = teacherData;
           }
         });
+
+        homeroomTeacherUids.push(...Array.from(homeroomTeachers.keys()));
 
         if (FACE_SCAN_DEBUG) {
           console.log("[LINE] Homeroom lookup:", {
@@ -1663,6 +1667,16 @@ const CheckinOutPage: React.FC = () => {
           teacherRecipientCount: teacherRecipientUserIds.filter(Boolean).length,
         });
       }
+
+      // แจ้งเตือนในแอป (กระดิ่ง Navbar + /notifications) ให้ครูประจำชั้น — แยกจาก LINE
+      // เพื่อให้ทำงานได้แม้โรงเรียนยังไม่ได้ตั้งค่า LINE OA
+      await notifyHomeroomTeachersInApp(schoolId, homeroomTeacherUids, userWithSemesterStats, status, time, actionType);
+      // แจ้งเตือนในแอปให้ผู้ปกครองเห็นด้วย (คนละ collection จากครู เพราะผู้ปกครองไม่มี uid คงที่
+      // ให้ผูก — ดูรายละเอียดที่ comment ของ notifyParentInApp) แสดงผลที่ /notifications/classroom-chat
+      // เหมือนกับครู แค่กรองเห็นเฉพาะบุตรของตัวเอง
+      await notifyParentInApp(schoolId, userWithSemesterStats, status, time, actionType);
+      // ส่งแจ้งเตือนพร้อมภาพถ่ายสแกนใบหน้าเข้าห้องแชทระหว่างครูประจำชั้นและผู้ปกครอง (parent-${studentId}) โดยตรง
+      await notifyParentInChat(schoolId, userWithSemesterStats, status, time, actionType);
     } catch (error) {
       console.error("LINE Notify Error:", error);
     }

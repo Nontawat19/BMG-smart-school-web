@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import GeneralAffairsLayout from "@/layouts/GeneralAffairsLayout";
 import BackButton from "@/components/Shared/BackButton";
 import { firestore, storage, auth } from "@/firebase";
-import { collection, query, where, getDocs, Timestamp, doc, updateDoc, getDoc, deleteField, arrayUnion, arrayRemove, addDoc } from "firebase/firestore";
+import { collection, query, where, getDocs, Timestamp, doc, updateDoc, getDoc, deleteField, arrayUnion, arrayRemove, addDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { FaFilePdf, FaCheckCircle, FaTimes, FaCheck, FaImages, FaWindowClose, FaTrash, FaPen, FaQrcode, FaCalendarAlt, FaEraser, FaSignature, FaUserTie, FaBuilding, FaBullhorn, FaRegCommentDots, FaSave, FaBook, FaChartPie, FaChalkboardTeacher, FaEye, FaBolt, FaChevronDown, FaSearch, FaChevronLeft, FaChevronRight, FaInbox } from "react-icons/fa";
@@ -11,6 +11,7 @@ import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import jsPDF from "jspdf";
 import Swal from "sweetalert2";
 import SkeletonLoader from "@/components/SkeletonLoader";
+import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
 
 interface StampedDocument {
   id: string;
@@ -102,6 +103,7 @@ const DirectorAssignmentPageSkeleton: React.FC = () => {
 };
 
 const DirectorAssignmentPage: React.FC = () => {
+  const scopedSchoolId = useEffectiveSchoolId();
   const [documents, setDocuments] = useState<StampedDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [schoolId, setSchoolId] = useState<string | null>(null);
@@ -690,13 +692,13 @@ const DirectorAssignmentPage: React.FC = () => {
     setPendingAssignment({ docId: targetDoc.id, data: finalData });
 
     // 💡 เข้าสู่โหมดการวางตำแหน่งตราประทับทันที
-    if (targetDoc.previewImageUrl) {
+    if (targetDoc.previewImageUrl || targetDoc.pdfUrl) {
       setAssignmentData(finalData);
       setCurrentDocument(targetDoc);
       setStampPosition({ x: ASSIGNMENT_STAMP_MARGIN, y: ASSIGNMENT_STAMP_MARGIN });
       setIsPositioning(true);
     } else {
-      Swal.fire({ icon: 'error', title: 'รูปภาพตัวอย่างไม่พร้อมใช้งาน', text: 'ไม่พบรูปภาพตัวอย่างสำหรับเอกสารนี้', background: '#2a2b2f', color: '#ffffff' });
+      Swal.fire({ icon: 'error', title: 'เอกสารไม่พร้อมใช้งาน', text: 'ไม่พบรูปภาพตัวอย่างหรือไฟล์ PDF สำหรับเอกสารนี้', background: '#2a2b2f', color: '#ffffff' });
     }
 
     setIsAssignmentModalOpen(false);
@@ -793,8 +795,8 @@ const DirectorAssignmentPage: React.FC = () => {
       setPendingAssignment(null);
       return;
     }
-    if (!docToStamp.previewImageUrl) {
-      Swal.fire({ icon: 'error', title: 'รูปภาพตัวอย่างไม่พร้อมใช้งาน', text: 'ไม่พบรูปภาพตัวอย่างสำหรับเอกสารนี้ กรุณาตรวจสอบเอกสารต้นฉบับ', background: '#2a2b2f', color: '#ffffff' });
+    if (!docToStamp.previewImageUrl && !docToStamp.pdfUrl) {
+      Swal.fire({ icon: 'error', title: 'เอกสารไม่พร้อมใช้งาน', text: 'ไม่พบรูปภาพตัวอย่างหรือไฟล์ PDF สำหรับเอกสารนี้ กรุณาตรวจสอบเอกสารต้นฉบับ', background: '#2a2b2f', color: '#ffffff' });
       setPendingAssignment(null);
       return;
     }
@@ -805,56 +807,115 @@ const DirectorAssignmentPage: React.FC = () => {
   };
   // 📌 Effects and handlers for stamp positioning (similar to GeneralAffairsPage)
   useEffect(() => {
-    if (isPositioning && previewCanvasRef.current && currentDocument?.previewImageUrl) {
+    let isCancelled = false;
+
+    const renderPreview = async () => {
+      if (!isPositioning || !previewCanvasRef.current || !currentDocument) return;
       const canvas = previewCanvasRef.current;
-      const ctx = canvas.getContext("2d")!;
-      // 💡 ตรวจสอบว่ามี assignmentData ก่อนวาด
-      if (assignmentData) {
-        const img = new Image();
-        img.crossOrigin = "anonymous"; // Important for cross-origin images
-        img.src = currentDocument.previewImageUrl;
-        img.onload = () => {
-          canvas.width = img.width;
-          canvas.height = img.height;
-          ctx.drawImage(img, 0, 0);
+      const ctx = canvas.getContext("2d");
+      if (!ctx || !assignmentData) return;
 
-          // 💡 ตำแหน่งเริ่มต้น (มุมบนซ้าย) มักไปทับหัวเรื่อง/เนื้อหาเอกสาร — พอรู้ขนาดภาพจริงแล้ว
-          // ให้ขยับกล่องไปมุมล่างซ้ายแทน ซึ่งเอกสารส่วนใหญ่เว้นที่ว่างไว้มากกว่า
-          const isDefaultPosition = stampPosition.x === ASSIGNMENT_STAMP_MARGIN && stampPosition.y === ASSIGNMENT_STAMP_MARGIN;
-          const drawX = stampPosition.x;
-          const drawY = isDefaultPosition
-            ? Math.max(ASSIGNMENT_STAMP_MARGIN, img.height - ASSIGNMENT_STAMP_HEIGHT - ASSIGNMENT_STAMP_MARGIN)
-            : stampPosition.y;
+      const drawStampOnImage = (source: HTMLImageElement | HTMLCanvasElement, width: number, height: number) => {
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(source, 0, 0);
 
-          if (isDefaultPosition && drawY !== stampPosition.y) {
-            setStampPosition({ x: drawX, y: drawY });
-          }
+        const isDefaultPosition = stampPosition.x === ASSIGNMENT_STAMP_MARGIN && stampPosition.y === ASSIGNMENT_STAMP_MARGIN;
+        const drawX = stampPosition.x;
+        const drawY = isDefaultPosition
+          ? Math.max(ASSIGNMENT_STAMP_MARGIN, height - ASSIGNMENT_STAMP_HEIGHT - ASSIGNMENT_STAMP_MARGIN)
+          : stampPosition.y;
 
-          // Load signature image before drawing stamp
-          const signatureImage = new Image();
-          signatureImage.src = assignmentData.signature;
-          signatureImage.onload = () => {
-            const dataWithImage = { ...assignmentData, signatureImage };
-            drawAssignmentStamp(ctx, drawX, drawY, dataWithImage);
-          };
-          signatureImage.onerror = () => drawAssignmentStamp(ctx, drawX, drawY, assignmentData); // Draw without signature on error
+        if (isDefaultPosition && drawY !== stampPosition.y) {
+          setStampPosition({ x: drawX, y: drawY });
+        }
 
+        const signatureImage = new Image();
+        signatureImage.src = assignmentData.signature;
+        signatureImage.onload = () => {
+          if (isCancelled) return;
+          const dataWithImage = { ...assignmentData, signatureImage };
+          drawAssignmentStamp(ctx, drawX, drawY, dataWithImage);
         };
-        img.onerror = (err) => {
-          console.error("Error loading preview image:", err);
-          Swal.fire({ 
-            icon: 'error', 
-            title: 'โหลดรูปภาพไม่สำเร็จ', 
-            text: 'ไม่สามารถโหลดรูปภาพตัวอย่างเอกสารได้ อาจเกิดจากปัญหา CORS ใน Firebase Storage กรุณาตรวจสอบการตั้งค่า', 
-            background: '#2a2b2f', color: '#ffffff' 
+        signatureImage.onerror = () => {
+          if (isCancelled) return;
+          drawAssignmentStamp(ctx, drawX, drawY, assignmentData);
+        };
+      };
+
+      let loaded = false;
+
+      // 1. พยายามโหลดจาก previewImageUrl โดยขอ Fresh Download URL จาก Firebase Storage ก่อนเสมอ
+      if (currentDocument.previewImageUrl) {
+        try {
+          const freshImgUrl = await refreshFirebaseStorageUrl(currentDocument.previewImageUrl);
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.src = freshImgUrl;
+          await new Promise<void>((resolve, reject) => {
+            img.onload = () => {
+              if (!isCancelled) {
+                drawStampOnImage(img, img.width, img.height);
+                loaded = true;
+              }
+              resolve();
+            };
+            img.onerror = reject;
           });
-          setIsPositioning(false);
-          setCurrentDocument(null);
-          setAssignmentData(null);
-          setPendingAssignment(null);
-        };
+        } catch (imgErr) {
+          console.warn("Could not load previewImageUrl, trying fallback to PDF:", imgErr);
+        }
       }
-    }
+
+      // 2. ถ้าโหลดรูปภาพไม่สำเร็จ (เช่น 403 Forbidden หรือไฟล์เดิมถูกลบ) ให้ fallback ไปเรนเดอร์หน้า 1 จาก PDF ผ่าน pdfjsLib
+      if (!loaded && currentDocument.pdfUrl) {
+        try {
+          const freshPdfUrl = await refreshFirebaseStorageUrl(currentDocument.pdfUrl);
+          const loadingTask = pdfjsLib.getDocument(freshPdfUrl);
+          const pdf = await loadingTask.promise;
+          const page = await pdf.getPage(1);
+          const viewport = page.getViewport({ scale: 1.5 });
+
+          const offscreenCanvas = document.createElement("canvas");
+          offscreenCanvas.width = viewport.width;
+          offscreenCanvas.height = viewport.height;
+          const offscreenCtx = offscreenCanvas.getContext("2d")!;
+
+          await page.render({
+            canvasContext: offscreenCtx,
+            viewport: viewport,
+            canvas: offscreenCanvas,
+          }).promise;
+
+          if (!isCancelled) {
+            drawStampOnImage(offscreenCanvas, viewport.width, viewport.height);
+            loaded = true;
+          }
+        } catch (pdfErr) {
+          console.error("PDF fallback render failed:", pdfErr);
+        }
+      }
+
+      if (!loaded && !isCancelled) {
+        Swal.fire({
+          icon: 'error',
+          title: 'โหลดรูปภาพไม่สำเร็จ',
+          text: 'ไม่สามารถโหลดรูปภาพตัวอย่างหรือไฟล์ PDF ได้ กรุณาตรวจสอบการตั้งค่า Firebase Storage',
+          background: '#2a2b2f',
+          color: '#ffffff'
+        });
+        setIsPositioning(false);
+        setCurrentDocument(null);
+        setAssignmentData(null);
+        setPendingAssignment(null);
+      }
+    };
+
+    renderPreview();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [isPositioning, stampPosition, currentDocument, assignmentData]);
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -922,9 +983,15 @@ const DirectorAssignmentPage: React.FC = () => {
   const handleConfirmAssignment = async () => {
     if (!currentDocument || !assignmentData || !schoolId) return;
 
-    // 💡 เพิ่มการตรวจสอบ previewImageUrl ก่อนดำเนินการต่อ
-    if (!currentDocument.previewImageUrl) {
-      Swal.fire({ icon: 'error', title: 'ข้อมูลไม่สมบูรณ์', text: 'ไม่พบรูปภาพตัวอย่างเอกสารเพื่อประทับตรา', background: '#2a2b2f', color: '#ffffff' });
+    // 💡 ตรวจสอบว่ามี previewImageUrl หรือ pdfUrl อย่างใดอย่างหนึ่ง
+    if (!currentDocument.previewImageUrl && !currentDocument.pdfUrl) {
+      Swal.fire({
+        icon: 'error',
+        title: 'ข้อมูลไม่สมบูรณ์',
+        text: 'ไม่พบรูปภาพตัวอย่างหรือไฟล์ PDF สำหรับเอกสารนี้เพื่อประทับตรา',
+        background: '#2a2b2f',
+        color: '#ffffff'
+      });
       setIsPositioning(false);
       return;
     }
@@ -932,45 +999,94 @@ const DirectorAssignmentPage: React.FC = () => {
     Swal.fire({
       title: 'กำลังอนุมัติและบันทึก...',
       text: 'กรุณารอสักครู่ ระบบกำลังประทับตราและอัปเดตข้อมูล',
-      background: '#2a2b2f', color: '#ffffff', allowOutsideClick: false,
+      background: '#2a2b2f',
+      color: '#ffffff',
+      allowOutsideClick: false,
       didOpen: () => Swal.showLoading()
     });
 
     try {
-      // 1. Create the new stamped preview image
-      const originalImage = new Image();
-      originalImage.crossOrigin = "anonymous";
-      originalImage.src = currentDocument.previewImageUrl; // ตอนนี้มั่นใจว่าไม่ใช่ null/undefined
-      
-      await new Promise<void>((resolve, reject) => {
-        originalImage.onload = () => {
-          // ตรวจสอบขนาดรูปภาพที่โหลดมา
-          resolve();
-        };
-        originalImage.onerror = reject;
-      });
+      // 1. โหลดหน้าแรกของเอกสาร: ลองจาก previewImageUrl ก่อน ถ้าติด 403 หรือล้มเหลว ให้เรนเดอร์จาก pdfUrl ผ่าน pdfjsLib
+      let page1Canvas: HTMLCanvasElement | null = null;
+      let page1Width = 0;
+      let page1Height = 0;
 
-      const canvas = document.createElement("canvas");
-      const ctx = canvas.getContext("2d")!;
-      canvas.width = originalImage.width;
-      canvas.height = originalImage.height;
-      ctx.drawImage(originalImage, 0, 0);
+      if (currentDocument.previewImageUrl) {
+        try {
+          const freshImgUrl = await refreshFirebaseStorageUrl(currentDocument.previewImageUrl);
+          const originalImage = new Image();
+          originalImage.crossOrigin = "anonymous";
+          originalImage.src = freshImgUrl;
+          await new Promise<void>((resolve, reject) => {
+            originalImage.onload = () => resolve();
+            originalImage.onerror = reject;
+          });
+          page1Width = originalImage.width;
+          page1Height = originalImage.height;
+          page1Canvas = document.createElement("canvas");
+          page1Canvas.width = page1Width;
+          page1Canvas.height = page1Height;
+          const ctx = page1Canvas.getContext("2d")!;
+          ctx.drawImage(originalImage, 0, 0);
+        } catch (imgErr) {
+          console.warn("Could not load previewImageUrl in confirm, falling back to PDF:", imgErr);
+        }
+      }
+
+      // Fallback ไปเรนเดอร์หน้า 1 จาก PDF ผ่าน pdfjsLib
+      if (!page1Canvas && currentDocument.pdfUrl) {
+        try {
+          const freshPdfUrl = await refreshFirebaseStorageUrl(currentDocument.pdfUrl);
+          const loadingTask = pdfjsLib.getDocument(freshPdfUrl);
+          const pdfDoc = await loadingTask.promise;
+          const page = await pdfDoc.getPage(1);
+          const viewport = page.getViewport({ scale: 1.5 });
+          page1Width = viewport.width;
+          page1Height = viewport.height;
+          page1Canvas = document.createElement("canvas");
+          page1Canvas.width = page1Width;
+          page1Canvas.height = page1Height;
+          const offscreenCtx = page1Canvas.getContext("2d")!;
+          await page.render({
+            canvasContext: offscreenCtx,
+            viewport: viewport,
+            canvas: page1Canvas,
+          }).promise;
+        } catch (pdfErr) {
+          console.error("PDF render failed in confirm:", pdfErr);
+        }
+      }
+
+      if (!page1Canvas) {
+        throw new Error("ไม่สามารถโหลดรูปภาพหรือไฟล์ PDF ของหน้าแรกได้");
+      }
+
+      const ctx = page1Canvas.getContext("2d")!;
 
       // Load signature image to be drawn on the final canvas
-      const signatureImage = new Image();
-      signatureImage.src = assignmentData.signature;
-      await new Promise(resolve => { signatureImage.onload = resolve; });
+      let signatureImage: HTMLImageElement | undefined;
+      if (assignmentData.signature) {
+        try {
+          const sig = new Image();
+          sig.src = assignmentData.signature;
+          await new Promise<void>((resolve) => {
+            sig.onload = () => resolve();
+            sig.onerror = () => resolve();
+          });
+          signatureImage = sig;
+        } catch (_) {}
+      }
       const dataWithImage = { ...assignmentData, signatureImage };
 
       drawAssignmentStamp(ctx, stampPosition.x, stampPosition.y, dataWithImage);
 
-      const newPreviewImageBlob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8)); // 💡 เปลี่ยนเป็น JPEG
+      const newPreviewImageBlob = await new Promise<Blob | null>(resolve => page1Canvas!.toBlob(resolve, 'image/jpeg', 0.85));
       if (!newPreviewImageBlob) {
         throw new Error("ไม่สามารถสร้างรูปภาพตัวอย่างใหม่ได้ (canvas.toBlob failed)");
       }
 
       // 2. Upload the new preview image to Storage
-      const newImageFileName = `page_1.jpeg`; // 💡 เปลี่ยนชื่อไฟล์เป็น page_1.jpeg
+      const newImageFileName = `page_1.jpeg`;
       const sanitizedReceiveNo = currentDocument.receiveNo.replace(/[^a-zA-Z0-9-]/g, '_');
       const documentFolder = `school-settings/${schoolId}/stampedDocuments/${sanitizedReceiveNo}`;
       const newImageStorageRef = ref(storage, `${documentFolder}/${newImageFileName}`);
@@ -980,8 +1096,7 @@ const DirectorAssignmentPage: React.FC = () => {
       // 💡 --- START: Re-create PDF from all page images ---
       const allPageImagesDataUrls: string[] = [];
 
-
-      // Fetch pages 2 onwards from the stored image URLs
+      // ถ้ามี imageUrls หลายหน้า ให้โหลดหน้า 2 เป็นต้นไป
       if (currentDocument.imageUrls && currentDocument.imageUrls.length > 1) {
         const imageLoadPromises = currentDocument.imageUrls.slice(1).map(async (url) => {
           const freshUrl = await refreshFirebaseStorageUrl(url);
@@ -996,30 +1111,45 @@ const DirectorAssignmentPage: React.FC = () => {
         });
         const otherPagesDataUrls = await Promise.all(imageLoadPromises);
         allPageImagesDataUrls.push(...otherPagesDataUrls);
+      } else if (currentDocument.pdfUrl) {
+        // หากไม่มี imageUrls ให้ตรวจสอบว่า PDF มีหน้า 2 เป็นต้นไปหรือไม่ และเรนเดอร์เก็บไว้
+        try {
+          const freshPdfUrl = await refreshFirebaseStorageUrl(currentDocument.pdfUrl);
+          const loadingTask = pdfjsLib.getDocument(freshPdfUrl);
+          const pdfDoc = await loadingTask.promise;
+          if (pdfDoc.numPages > 1) {
+            for (let pageNum = 2; pageNum <= pdfDoc.numPages; pageNum++) {
+              const p = await pdfDoc.getPage(pageNum);
+              const vp = p.getViewport({ scale: 1.5 });
+              const c = document.createElement("canvas");
+              c.width = vp.width;
+              c.height = vp.height;
+              const cCtx = c.getContext("2d")!;
+              await p.render({ canvasContext: cCtx, viewport: vp, canvas: c }).promise;
+              allPageImagesDataUrls.push(c.toDataURL('image/jpeg', 0.85));
+            }
+          }
+        } catch (pdfPagesErr) {
+          console.warn("Could not load additional pages from PDF:", pdfPagesErr);
+        }
       }
 
-      // Page 1 is the newly stamped director's page, add it to the beginning of the array
-      allPageImagesDataUrls.unshift(canvas.toDataURL('image/jpeg', 0.8)); // 💡 เปลี่ยนเป็น JPEG
+      // หน้าแรกคือหน้าที่เพิ่งประทับตราของ ผอ.
+      allPageImagesDataUrls.unshift(page1Canvas.toDataURL('image/jpeg', 0.85));
 
-
-      // Create a new PDF document from all page images
-      // 💡 สำคัญ: ต้องระบุ orientation ให้ตรงกับสัดส่วนภาพจริง (แนวนอน/แนวตั้ง) ทุกครั้ง —
-      // ถ้าไม่ระบุ jsPDF จะ default เป็น "portrait" เสมอ และถ้าเจอภาพแนวนอน (กว้าง > สูง)
-      // จะ "สลับ" ความกว้าง/สูงของหน้ากระดาษให้กลายเป็นแนวตั้งโดยอัตโนมัติ แต่ addImage ยังวาดภาพ
-      // ด้วยขนาดแนวนอนเดิม ทำให้ภาพเข้าไม่เต็มหน้า เหลือพื้นที่ว่างด้านล่าง (เอกสารแสดงผลไม่ครบ)
-      // hotfixes: ["px_scaling"] จำเป็นเมื่อใช้ unit "px" เช่นกัน — ไม่งั้น jsPDF คำนวณ scale factor ผิด
-      const pdfOrientation: "l" | "p" = originalImage.width > originalImage.height ? "l" : "p";
+      // สร้าง PDF ใหม่ที่มีตราประทับ
+      const pdfOrientation: "l" | "p" = page1Width > page1Height ? "l" : "p";
       const newPdf = new jsPDF({
         unit: "px",
-        format: [originalImage.width, originalImage.height],
+        format: [page1Width, page1Height],
         orientation: pdfOrientation,
         hotfixes: ["px_scaling"],
       });
-      newPdf.deletePage(1); // Remove the default blank page
+      newPdf.deletePage(1); // ลบหน้าเปล่าเริ่มต้น
 
       for (let i = 0; i < allPageImagesDataUrls.length; i++) {
-        newPdf.addPage([originalImage.width, originalImage.height], pdfOrientation);
-        newPdf.addImage(allPageImagesDataUrls[i], "JPEG", 0, 0, originalImage.width, originalImage.height, undefined, 'MEDIUM'); // 💡 เปลี่ยนเป็น JPEG และเพิ่มการบีบอัด
+        newPdf.addPage([page1Width, page1Height], pdfOrientation);
+        newPdf.addImage(allPageImagesDataUrls[i], "JPEG", 0, 0, page1Width, page1Height, undefined, 'MEDIUM');
       }
 
       const newPdfBlob = newPdf.output('blob');
@@ -1114,6 +1244,71 @@ const DirectorAssignmentPage: React.FC = () => {
         } else {
           console.warn(`ไม่พบ uid ของครู "${assignmentData.informTeacher}" — ข้ามการแจ้งเตือนรายบุคคล`);
         }
+      }
+
+      // 💬 ส่งเอกสารมอบหมาย (PDF) เข้าแชทหลักโรงเรียน และ แชทฝ่ายงาน ตามที่ ผอ. กำหนด
+      try {
+        const activeSchoolId = schoolId || scopedSchoolId;
+        if (activeSchoolId) {
+          // ส่งเข้าแชทหลักโรงเรียน (school-main) เสมอ และส่งเข้าห้องฝ่ายงานที่ ผอ. เลือก
+          const targetRooms: string[] = ["school-main"];
+          if (assignmentData.academic) targetRooms.push("dept-academic");
+          if (assignmentData.budget) targetRooms.push("dept-budget");
+          if (assignmentData.personnel) targetRooms.push("dept-personnel");
+          if (assignmentData.general) targetRooms.push("dept-general");
+
+          const senderUid = "director-official";
+          const directorDisplayName = (schoolInfo as any)?.directorName || auth.currentUser?.displayName || "ผู้อำนวยการ";
+          const senderName = `ผู้อำนวยการ (${directorDisplayName})`;
+          const assignTeacherText = (assignmentData.inform && assignmentData.informTeacher)
+            ? ` ถึง คุณครู${assignmentData.informTeacher}`
+            : "";
+          const commentText = assignmentData.comment ? ` — ข้อสั่งการ: ${assignmentData.comment}` : "";
+          const chatMsgText = `ผอ. มอบหมายงาน: ${currentDocument.subject || currentDocument.receiveNo}${assignTeacherText}${commentText}`;
+          const truncatedDocName = (currentDocument.subject || "เอกสารมอบหมายงาน").slice(0, 250);
+          const docLink = `/director/assigned-work?id=${currentDocument.id}`;
+
+          console.log("🚀 กำลังส่งเอกสารมอบหมายเข้าห้องแชท:", targetRooms, "โรงเรียน:", activeSchoolId);
+
+          for (const targetRoomId of targetRooms) {
+            try {
+              const messagesColRef = collection(firestore, "school-settings", activeSchoolId, "chatRooms", targetRoomId, "messages");
+              await addDoc(messagesColRef, {
+                type: "document",
+                text: chatMsgText,
+                pdfUrl: newPdfUrl,
+                documentId: currentDocument.id,
+                documentLink: docLink,
+                documentName: truncatedDocName,
+                documentNo: currentDocument.receiveNo || "",
+                documentDate: currentDocument.date || "",
+                documentCategory: "งานมอบหมาย (ผอ.)",
+                senderUid,
+                senderName,
+                senderRole: "teacher",
+                senderPhotoUrl: (schoolInfo as any)?.directorPhotoUrl || (schoolInfo as any)?.logoUrl || "",
+                createdAt: serverTimestamp(),
+              });
+
+              await setDoc(doc(firestore, "school-settings", activeSchoolId, "chatRooms", targetRoomId), {
+                type: targetRoomId === "school-main" ? "school" : "department",
+                lastMessageText: `[เอกสารมอบหมาย] ${truncatedDocName}`,
+                lastMessageAt: serverTimestamp(),
+                lastMessageSenderUid: senderUid,
+                readBy: {
+                  [senderUid]: serverTimestamp(),
+                },
+              }, { merge: true });
+            } catch (innerRoomErr) {
+              console.error(`Error sending message to room ${targetRoomId}:`, innerRoomErr);
+            }
+          }
+          console.log("✅ ส่งเอกสารมอบหมายเข้าห้องแชทสำเร็จ:", targetRooms);
+        } else {
+          console.warn("⚠️ ไม่พบ activeSchoolId สำหรับส่งข้อความเข้าห้องแชท");
+        }
+      } catch (chatErr) {
+        console.error("Error dispatching assignment document to chat:", chatErr);
       }
       // 💡 --- END: Send Notifications ---
 
@@ -1295,7 +1490,7 @@ const DirectorAssignmentPage: React.FC = () => {
                   <span>ดูเอกสาร</span>
                 </button>
                 {/* 💡 เปลี่ยนปุ่มตามสถานะของ pendingAssignment */}
-                {pendingAssignment?.docId === doc.id && doc.previewImageUrl ? (
+                {pendingAssignment?.docId === doc.id && (doc.previewImageUrl || doc.pdfUrl) ? (
                   <>
                     <button
                       onClick={() => handleApprove(doc)}

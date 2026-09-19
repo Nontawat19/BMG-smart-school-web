@@ -270,9 +270,15 @@ const GradeBookPage: React.FC = () => {
         };
       } else {
         const isAutoMsRemark = base.status === 'มส' && typeof base.remark === 'string' && base.remark.startsWith('เวลาเรียนไม่ถึงร้อยละ 80');
+        const naturalGrade = calculateGradeMemoized(base.total ?? 0);
+        const isRemediated = Boolean((base as any).originalGrade && base.grade);
+        const resolvedGrade = base.status
+          ? base.status
+          : (base.grade === 'ร' ? 'ร' : (isRemediated ? base.grade : naturalGrade));
+
         result[s.id] = isAutoMsRemark
-          ? { ...base, status: undefined, grade: calculateGradeMemoized(base.total ?? 0), remark: undefined }
-          : base;
+          ? { ...base, status: undefined, grade: naturalGrade, remark: undefined }
+          : { ...base, grade: resolvedGrade };
       }
     });
     return result;

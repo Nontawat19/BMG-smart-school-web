@@ -7,6 +7,8 @@ import PullToRefresh from "@/components/PullToRefresh";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 import ActivityModeGuard from "./components/ActivityModeGuard";
+import { ChatWidgetProvider } from "./pages/Chat/ChatWidgetContext";
+import FloatingChatManager from "./pages/Chat/FloatingChatManager";
 import { OWNER_ONLY, ADMIN_ACCESS, ACADEMIC_ACCESS, STAFF_ACCESS, GENERAL_AFFAIRS_ACCESS, GENERAL_AFFAIRS_WORK_ACCESS, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL, STUDENT_AFFAIRS_ACCESS, STUDENT_AFFAIRS_MANAGEMENT, STUDENT_SUPPORT_OPERATIONAL_ACCESS, STUDENT_ATTENDANCE_REPORT_ACCESS, CLUB_MEMBER_MANAGEMENT_ACCESS } from "@/constants/permissions";
 
 import PublicRoute from "./components/PublicRoute";
@@ -34,6 +36,9 @@ const ForgotPasswordPage = lazy(() => import("./pages/Auth/ForgotPasswordPage"))
 const ResetPasswordPage = lazy(() => import("./pages/Auth/ResetPasswordPage"));
 const HomePage = lazy(() => import("./pages/Home/HomePage"));
 const NotificationsPage = lazy(() => import("./pages/Notifications/NotificationsPage"));
+const ClassroomChatPage = lazy(() => import("./pages/Notifications/ClassroomChatPage"));
+const ChatListPage = lazy(() => import("./pages/Chat/ChatListPage"));
+const ChatRoomPage = lazy(() => import("./pages/Chat/ChatRoomPage"));
 const ProfilePage = lazy(() => import("./pages/Profile/ProfilePage"));
 const LeaveRequestPage = lazy(() => import("./pages/Attendance/LeaveRequestPage"));
 const LeaveHistoryPage = lazy(() => import("./pages/Attendance/LeaveHistoryPage"));
@@ -267,6 +272,7 @@ function App() {
     <PermissionProvider schoolId={activeSchoolId || user?.schoolId}>
     <PullToRefresh>
       <Router>
+        <ChatWidgetProvider>
         <Suspense fallback={<LoadingScreen />}><Routes>
           {/* Public Pages */}
           <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
@@ -281,6 +287,9 @@ function App() {
           {/* Protected Pages - General */}
           <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
           <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
+          <Route path="/notifications/classroom-chat" element={<ProtectedRoute><ClassroomChatPage /></ProtectedRoute>} />
+          <Route path="/chat" element={<ProtectedRoute><ChatListPage /></ProtectedRoute>} />
+          <Route path="/chat/:roomId" element={<ProtectedRoute featureFlag="chat"><ChatRoomPage /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
           <Route path="/my-schedule" element={<ProtectedRoute allowedRoles={[...STAFF_ACCESS, ROLES.STUDENT]}><MySchedulePage /></ProtectedRoute>} />
 
@@ -480,6 +489,8 @@ function App() {
           {/* Default fallback */}
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes></Suspense>
+        <FloatingChatManager />
+        </ChatWidgetProvider>
       </Router>
     </PullToRefresh>
     </PermissionProvider>

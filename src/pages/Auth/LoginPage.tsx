@@ -207,7 +207,10 @@ const LoginPage: React.FC = () => {
       }
 
       if (foundStudent) {
-        try { await signInAnonymously(auth); } catch (_) {}
+        // เรียก signInAnonymously() เฉพาะตอนยังไม่มี session ค้างอยู่เท่านั้น — เดิมเรียกทุกครั้งที่
+        // ล็อกอิน ทำให้ได้ uid ใหม่ทุกรอบ (แม้จะยัง sign in ค้างอยู่จาก browserLocalPersistence)
+        // ข้อความแชทเก่าที่เขียน senderUid เป็น uid เก่าไว้เลยกลายเป็น "ไม่ใช่ของฉัน" ทันทีที่ล็อกอินใหม่
+        try { if (!auth.currentUser) await signInAnonymously(auth); } catch (_) {}
         localStorage.setItem('currentUserType', 'student');
         localStorage.setItem('studentSession', JSON.stringify({
           schoolId: foundSchoolId,
@@ -285,9 +288,14 @@ const LoginPage: React.FC = () => {
         return;
       }
 
-      try { await signInAnonymously(auth); } catch (_) {}
+      // เรียก signInAnonymously() เฉพาะตอนยังไม่มี session ค้างอยู่เท่านั้น (ดู comment ที่ handleStudentLogin)
+      try { if (!auth.currentUser) await signInAnonymously(auth); } catch (_) {}
       localStorage.setItem('currentUserType', 'parent');
-      localStorage.setItem('parentSession', JSON.stringify({ children: foundChildren }));
+      localStorage.setItem('parentSession', JSON.stringify({
+        children: foundChildren,
+        phone: cleanPhone,
+        nationalId: cleanNationalId,
+      }));
 
       const first = foundChildren[0];
       toast.success(

@@ -23,9 +23,13 @@ import {
 } from "firebase/firestore";
 
 import { formatNotificationTime } from "@/utils/dateUtils";
+import { playNotificationSound } from "@/utils/notificationSound";
+import ChatRoomList from "@/pages/Chat/ChatRoomList";
+import { useChatWidget } from "@/pages/Chat/ChatWidgetContext";
 
 import { FaBell, FaBars, FaBookOpen, FaSun, FaMoon, FaHome, FaUserCheck, FaChalkboardTeacher } from "react-icons/fa";
 import { FiSearch } from "react-icons/fi";
+import { MessagesSquare } from "lucide-react";
 // import liff from "@line/liff"; // 📌 นำ LIFF ออกตามคำขอ
 
 import defaultProfile from "@/assets/profile.png";
@@ -86,6 +90,8 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
   const location = useLocation();
   const dispatch = useDispatch();
   const notificationRef = useRef<HTMLDivElement>(null);
+  const chatRef = useRef<HTMLDivElement>(null);
+  const [isOpenChat, setIsOpenChat] = useState(false);
   const { isDarkMode, toggleTheme } = useTheme();
 
   const currentUser = useSelector((state: RootState) => state.auth.user);
@@ -94,6 +100,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
   const profileUrl = currentUser?.profileUrl || defaultProfile;
   const isPwaMode = usePwaMode();
 
+  const { openChat, unreadCount: unreadChatCount, chatEnabled } = useChatWidget();
   const [activeIcon, setActiveIcon] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isOpenNoti, setIsOpenNoti] = useState(false);
@@ -118,6 +125,9 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
   }, [resolvedSchoolId, settingsSchoolId, schoolSettingsStatus, dispatch]);
 
   /* -------------------- realtime notification ----โ---------------- */
+  const lastTopNotificationIdRef = useRef<string | null>(null);
+  const isFirstNotificationSnapshotRef = useRef(true);
+
   useEffect(() => {
     const userType = localStorage.getItem('currentUserType');
     if (!currentUser?.uid || isOwnerRoute || userType === 'student' || userType === 'parent') {
@@ -126,6 +136,8 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
       return;
     }
     setIsLoadingNoti(true);
+    isFirstNotificationSnapshotRef.current = true;
+    lastTopNotificationIdRef.current = null;
 
     // 📌 แก้ไข: ใช้ collectionGroup เพื่อดึงข้อมูลการแจ้งเตือนจากทุกโรงเรียน
     const q = query(
@@ -146,6 +158,15 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
         });
         setNotifications(data);
         setIsLoadingNoti(false);
+
+        // เล่นเสียงแจ้งเตือนเฉพาะตอนมีรายการใหม่ล่าสุดโผล่มาจริงๆ (ไม่เล่นตอนโหลดหน้าครั้งแรก
+        // และไม่เล่นซ้ำตอน snapshot ยิงใหม่จากแค่การมาร์คอ่านแล้ว ที่ id บนสุดยังเหมือนเดิม)
+        const newTopId = data[0]?.id ?? null;
+        if (!isFirstNotificationSnapshotRef.current && newTopId && newTopId !== lastTopNotificationIdRef.current) {
+          playNotificationSound();
+        }
+        isFirstNotificationSnapshotRef.current = false;
+        lastTopNotificationIdRef.current = newTopId;
       },
       (error) => {
         console.error("Error listening to notifications:", error);
@@ -303,6 +324,9 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
       if (notificationRef.current && !notificationRef.current.contains(e.target as Node)) {
         setIsOpenNoti(false);
       }
+      if (chatRef.current && !chatRef.current.contains(e.target as Node)) {
+        setIsOpenChat(false);
+      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -315,6 +339,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
         e.preventDefault();
         setIsSearchOpen((prev) => !prev);
         setIsOpenNoti(false);
+        setIsOpenChat(false);
         setIsMobileMenuOpen(false);
       }
     };
@@ -548,6 +573,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
                 className={`${iconClass('notify')} bg-transparent border-0 p-0`}
                 onClick={() => {
                   setIsOpenNoti((p) => !p);
+                  setIsOpenChat(false);
                   setIsMobileMenuOpen(false);
                   setIsSearchOpen(false);
                 }}
@@ -674,6 +700,57 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
                 </div>
               )}
             </div>
+            )}
+            {/* Chat — ซ่อนไอคอนทั้งหมดถ้าโรงเรียนนี้ยังไม่เปิดฟีเจอร์แชท (ตั้งค่าได้ที่ /owner/school-info) */}
+            {!isAttendanceEntryOnly(currentUser?.role) && chatEnabled && (
+              <div className="relative" ref={chatRef}>
+                <button
+                  type="button"
+                  className={`group relative flex h-11 w-11 items-center justify-center rounded-xl cursor-pointer transition-all duration-200 border-0 ${
+                    isOpenChat
+                      ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 ring-1.5 ring-indigo-500/30 shadow-xs"
+                      : "text-gray-500 hover:bg-gray-100 hover:text-indigo-600 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-gray-100"
+                  }`}
+                  onClick={() => {
+                    setIsOpenChat((p) => !p);
+                    setIsOpenNoti(false);
+                    setIsMobileMenuOpen(false);
+                    setIsSearchOpen(false);
+                  }}
+                  aria-label="ระบบแชทและการสื่อสารองค์กร"
+                  title="ระบบแชทและการสื่อสารองค์กร"
+                >
+                  <MessagesSquare
+                    className="h-6 w-6 transition-transform duration-200 group-hover:scale-105"
+                    strokeWidth={1.85}
+                    aria-hidden="true"
+                  />
+                  {unreadChatCount > 0 && (
+                    <span className="absolute top-1 right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white shadow-sm ring-2 ring-white dark:ring-[#18191a]">
+                      {unreadChatCount > 9 ? "9+" : unreadChatCount}
+                    </span>
+                  )}
+                </button>
+
+                {isOpenChat && (
+                  <div className="fixed left-4 right-4 top-[65px] z-[9999] sm:absolute sm:top-full sm:right-0 sm:left-auto sm:w-[360px] sm:max-w-[calc(100vw-2rem)] sm:mt-2 bg-white dark:bg-[#242526] rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700/80 overflow-hidden">
+                    <div className="px-4 py-3 flex justify-between items-center border-b border-gray-100 dark:border-gray-700/70 bg-gray-50/60 dark:bg-gray-800/40">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400">
+                          <MessagesSquare size={16} strokeWidth={2} />
+                        </div>
+                        <h3 className="font-bold text-sm tracking-tight text-gray-900 dark:text-white">
+                          การสื่อสารในสถานศึกษา
+                        </h3>
+                      </div>
+                      <span className="rounded-md bg-indigo-100/60 px-2 py-0.5 text-[10px] font-semibold text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300">
+                        BMS Chat
+                      </span>
+                    </div>
+                    <ChatRoomList onSelectRoom={(roomId) => { openChat(roomId); setIsOpenChat(false); }} />
+                  </div>
+                )}
+              </div>
             )}
             {isAttendanceEntryOnly(currentUser?.role) ? (
               <ProfileAvatar

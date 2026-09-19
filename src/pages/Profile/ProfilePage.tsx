@@ -9,7 +9,7 @@ import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import MainLayout from "@/layouts/MainLayout";
 import LogoutButton from "@/components/LogoutButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
-import { FaPen, FaSun, FaMoon, FaBook, FaUser, FaBriefcase, FaChalkboard, FaChevronRight, FaClock, FaExchangeAlt, FaPlane, FaIdCard, FaUsers, FaMapMarkerAlt, FaHeartbeat, FaSearch, FaEdit, FaChevronDown, FaChevronUp, FaThLarge, FaList, FaQrcode, FaLine, FaCopy, FaExternalLinkAlt, FaEye, FaEyeSlash, FaExclamationTriangle } from "react-icons/fa";
+import { FaPen, FaSun, FaMoon, FaBook, FaUser, FaBriefcase, FaChalkboard, FaChevronRight, FaClock, FaExchangeAlt, FaPlane, FaIdCard, FaUsers, FaMapMarkerAlt, FaHeartbeat, FaSearch, FaEdit, FaChevronDown, FaChevronUp, FaThLarge, FaList, FaQrcode, FaLine, FaCopy, FaExternalLinkAlt, FaEye, FaEyeSlash, FaExclamationTriangle, FaGraduationCap, FaAward } from "react-icons/fa";
 import { useTheme } from "../../ThemeContext";
 import SkeletonLoader from "@/components/SkeletonLoader";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Cell, ResponsiveContainer, LineChart, Line, Legend, AreaChart, Area, ComposedChart } from 'recharts';
@@ -18,6 +18,8 @@ import QRCode from "react-qr-code";
 import OfficialTravelPdfButton from "../../components/Pdf/OfficialTravel/OfficialTravelPdfButton";
 import { ViewCourseDetailModal } from "./components/ViewCourseDetailModal";
 import { EditCourseModal } from "./components/EditCourseModal";
+import StudentAcademicGradesTab from "./components/StudentAcademicGradesTab";
+import StudentActivitiesEvaluationTab from "./components/StudentActivitiesEvaluationTab";
 import { useDispatch } from "react-redux";
 import Swal from 'sweetalert2';
 
@@ -1379,6 +1381,8 @@ const ProfilePage: React.FC = () => {
 
   const tabs = userRole === 'student' ? [
     { id: "general", label: "ข้อมูลทั่วไป", icon: <FaIdCard /> },
+    { id: "academic_grades", label: "ผลการเรียน", icon: <FaGraduationCap /> },
+    { id: "activities_evaluation", label: "กิจกรรมพัฒนาผู้เรียน", icon: <FaAward /> },
     { id: "family", label: "ครอบครัว", icon: <FaUsers /> },
     { id: "address", label: "ที่อยู่", icon: <FaMapMarkerAlt /> },
     { id: "health_welfare", label: "สุขภาพ/สวัสดิการ", icon: <FaHeartbeat /> },
@@ -1388,6 +1392,8 @@ const ProfilePage: React.FC = () => {
   ] : userRole === 'user' ? [
     { id: "general", label: "ข้อมูลส่วนตัว", icon: <FaIdCard /> },
     { id: "work", label: "ข้อมูลการทำงาน", icon: <FaBriefcase /> },
+    { id: "academic_grades", label: "ผลการเรียน", icon: <FaGraduationCap /> },
+    { id: "activities_evaluation", label: "กิจกรรมพัฒนาผู้เรียน", icon: <FaAward /> },
     ...(remediationEnabled ? [{ id: "grade_flags", label: "ผลการเรียน (0/ร/มส/มผ)", icon: <FaExclamationTriangle /> }] : []),
   ] : [
     { id: "general", label: "ข้อมูลส่วนตัว", icon: <FaIdCard /> },
@@ -2723,6 +2729,22 @@ const ProfilePage: React.FC = () => {
                     </div>
                   </div>
                 </div>
+              )}
+
+              {activeTab === "academic_grades" && (userRole === 'student' || userRole === 'user') && (
+                <StudentAcademicGradesTab
+                  schoolId={profile.schoolId}
+                  studentId={profile.docId}
+                  studentData={profile}
+                />
+              )}
+
+              {activeTab === "activities_evaluation" && (userRole === 'student' || userRole === 'user') && (
+                <StudentActivitiesEvaluationTab
+                  schoolId={profile.schoolId}
+                  studentId={profile.docId}
+                  studentData={profile}
+                />
               )}
 
               {activeTab === "grade_flags" && (userRole === 'student' || userRole === 'user') && (() => {
