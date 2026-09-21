@@ -511,7 +511,12 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
                   loading="eager"
                 />
               ) : (
-                <FaBookOpen className="w-7 h-7 text-sky-500 dark:text-sky-400" aria-hidden="true" />
+                <img
+                  src="/logo.png"
+                  alt={schoolDisplayName || "BMG Smart School"}
+                  className="w-8 h-8 rounded-full object-contain bg-white p-0.5"
+                  loading="eager"
+                />
               )}
               <div className="hidden sm:flex flex-col min-w-0">
                 <span className="font-bold text-lg text-gray-800 dark:text-white whitespace-nowrap">

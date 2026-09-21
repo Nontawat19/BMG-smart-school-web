@@ -15,7 +15,7 @@ export default defineConfig({
       srcDir: 'src',
       filename: 'sw.ts',
       registerType: 'autoUpdate',
-      includeAssets: ['Epp5 online.png', 'pwa-192x192.png', 'pwa-512x512.png'],
+      includeAssets: ['logo.png', 'Epp5 online.png', 'pwa-192x192.png', 'pwa-512x512.png'],
       manifest: {
         name: 'BMG Smart School',
         short_name: 'BMG Smart School',

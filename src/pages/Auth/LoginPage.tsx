@@ -330,7 +330,7 @@ const LoginPage: React.FC = () => {
                 {tenantSchool?.logoUrl ? (
                   <img src={tenantSchool.logoUrl} alt="Logo" className="w-20 h-20 object-contain drop-shadow-md" />
                 ) : (
-                  <FaBookOpen className="w-16 h-16 text-white" />
+                  <img src="/logo.png" alt="BMG Smart School" className="w-20 h-20 object-contain drop-shadow-md" />
                 )}
               </div>
               <h1 className="text-4xl lg:text-5xl font-black mb-1 tracking-tight text-white drop-shadow-md leading-tight px-4">
@@ -373,10 +373,10 @@ const LoginPage: React.FC = () => {
         <div className="w-full lg:w-1/2 p-6 sm:p-8 lg:p-10 flex flex-col justify-center relative">
           {/* Mobile Logo (Visible only on Mobile) */}
           <div className="lg:hidden flex flex-col items-center mb-4 text-center">
-            <div className="w-12 h-12 bg-gradient-to-br from-indigo-600 to-blue-500 rounded-xl flex items-center justify-center mb-2 shadow-lg transform rotate-3">
-              <FaBookOpen className="text-white text-2xl" />
+            <div className="w-14 h-14 bg-white/10 dark:bg-gray-800/40 backdrop-blur rounded-2xl flex items-center justify-center mb-2 shadow-lg p-2 border border-gray-100 dark:border-gray-700">
+              <img src={tenantSchool?.logoUrl || "/logo.png"} alt="BMG Smart School" className="w-full h-full object-contain" />
             </div>
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">BMG Smart School</h2>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">{tenantSchool?.schoolName || "BMG Smart School"}</h2>
           </div>
 
           <div className="mb-6 text-center lg:text-left">
