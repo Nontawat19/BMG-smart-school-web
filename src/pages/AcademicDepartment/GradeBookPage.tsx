@@ -26,7 +26,8 @@ import {
   CharacteristicCriteria,
   ReadingWritingCriteria,
   GroupAssignment,
-  GradeRecord
+  GradeRecord,
+  MaxScores
 } from './GradeBookPage/types';
 
 import GradeBookHeader from './GradeBookPage/components/GradeBookHeader';
@@ -80,7 +81,7 @@ const GradeBookPage: React.FC = () => {
   const [assignmentsLoaded, setAssignmentsLoaded] = useState(false);
   const [characteristicsCriteria, setCharacteristicsCriteria] = useState<CharacteristicCriteria[]>([]);
   const [readingWritingCriteria, setReadingWritingCriteria] = useState<ReadingWritingCriteria[]>([]);
-  const [maxScores, setMaxScores] = useState({ formative: 0, midterm: 0, final: 0 });
+  const [maxScores, setMaxScores] = useState<MaxScores>({ formative: 0, preMidterm: 0, postMidterm: 0, midterm: 0, final: 0 });
   const qrRef = useRef<HTMLDivElement>(null);
   const [schoolInfo, setSchoolInfo] = useState<any>(null);
 
@@ -259,7 +260,7 @@ const GradeBookPage: React.FC = () => {
   const effectiveGrades = useMemo(() => {
     const result: Record<string, GradeRecord> = {};
     students.forEach(s => {
-      const base = grades[s.id] || { formative: 0, midterm: 0, final: 0, total: 0, grade: '0' };
+      const base = grades[s.id] || { formative: 0, preMidterm: 0, postMidterm: 0, midterm: 0, final: 0, total: 0, grade: '0' };
       const eligibility = attendance.attendanceEligibility[s.id];
       if (eligibility?.belowThreshold) {
         result[s.id] = {
@@ -554,22 +555,30 @@ const GradeBookPage: React.FC = () => {
 
   useEffect(() => {
     if (!currentCourse) {
-      setMaxScores({ formative: 0, midterm: 0, final: 0 });
+      setMaxScores({ formative: 0, preMidterm: 0, postMidterm: 0, midterm: 0, final: 0 });
       return;
     }
 
-    const hasScoreConfig = Array.isArray(currentCourse.formativeAssessments);
+    const hasScoreConfig = Array.isArray(currentCourse.formativeAssessments) && currentCourse.formativeAssessments.length > 0;
 
-    if (!hasScoreConfig) {
-      setMaxScores({ formative: 0, midterm: 0, final: 0 });
-      return;
-    }
+    const preMidAssessments = currentCourse.formativeAssessments?.filter(a => a.term === 'pre-midterm' || !a.term) || [];
+    const postMidAssessments = currentCourse.formativeAssessments?.filter(a => a.term === 'post-midterm') || [];
 
-    const configuredFormative = currentCourse.formativeAssessments?.reduce((sum, assessment) => sum + (Number(assessment.maxScore) || 0), 0) || 0;
-    const f = configuredFormative;
+    const preM = preMidAssessments.reduce((sum, a) => sum + (Number(a.maxScore) || 0), 0);
+    const postM = postMidAssessments.reduce((sum, a) => sum + (Number(a.maxScore) || 0), 0);
+    const f = hasScoreConfig ? (preM + postM) : (Number(currentCourse.formativeWeight || 0));
+    const effectivePreM = hasScoreConfig ? preM : f;
+    const effectivePostM = hasScoreConfig ? postM : 0;
     const m = Number(currentCourse.midtermWeight ?? 0);
     const fn = currentCourse.finalWeight !== undefined ? Number(currentCourse.finalWeight) : Math.max(0, 100 - f - m);
-    setMaxScores({ formative: f, midterm: m, final: fn });
+
+    setMaxScores({
+      formative: f,
+      preMidterm: effectivePreM,
+      postMidterm: effectivePostM,
+      midterm: m,
+      final: fn
+    });
   }, [currentCourse]);
 
   useEffect(() => {
@@ -929,6 +938,7 @@ const GradeBookPage: React.FC = () => {
               completenessDisplay={completenessDisplay}
               characteristicsCriteria={characteristicsCriteria} readingWritingCriteria={readingWritingCriteria}
               maxScores={maxScores} selectedClass={selectedClass} selectedCourse={selectedCourse}
+              selectedRoom={selectedRoom} effectiveSemester={effectiveSemester} currentCourse={currentCourse}
               sdqMap={sdqMap} scoreDistribution={calculations.scoreDistribution}
               formatPrefix={formatPrefix} handleScoreChange={handleScoreChange}
               handleBulkFillColumn={handleBulkFillColumn} handleSyncSDQColumn={handleSyncSDQColumn}

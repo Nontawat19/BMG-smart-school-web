@@ -133,6 +133,7 @@ export const useChatRoomStates = (enabled: boolean): { roomStates: Record<string
       const roomsRef = collection(firestore, "school-settings", schoolId, "chatRooms");
       attachQueryListener(query(roomsRef, where("type", "==", "student-direct"), where("teacherUid", "==", uid)));
       attachQueryListener(query(roomsRef, where("type", "==", "group"), where("createdByUid", "==", uid)));
+      attachQueryListener(query(roomsRef, where("type", "==", "staff-direct"), where("memberUids", "array-contains", uid)));
 
       getDoc(doc(firestore, "school-settings", schoolId, "teachers", uid)).then(async (teacherSnap) => {
         if (cancelled) return;

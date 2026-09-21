@@ -1,6 +1,6 @@
 import { useMemo, useCallback } from 'react';
 import Swal from 'sweetalert2';
-import { Student, GradeRecord, CharacteristicCriteria, ReadingWritingCriteria, Course } from '../types';
+import { Student, GradeRecord, CharacteristicCriteria, ReadingWritingCriteria, Course, MaxScores } from '../types';
 import {
     isStudentEnrolledOnDay,
     buildAttendancePages,
@@ -20,7 +20,7 @@ export const useGradeBookAttendance = (
     students: Student[],
     selectedCourse: string,
     currentCourse: Course | undefined,
-    maxScores: { formative: number; midterm: number; final: number },
+    maxScores: MaxScores,
     characteristicsCriteria: CharacteristicCriteria[],
     readingWritingCriteria: ReadingWritingCriteria[],
     grades: Record<string, GradeRecord>,

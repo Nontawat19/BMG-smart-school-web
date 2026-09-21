@@ -21,6 +21,38 @@ const getConfiguredFormativeTotal = (record: any, currentCourse?: Course) => {
     }, 0);
 };
 
+const getConfiguredPreMidtermTotal = (record: any, currentCourse?: Course) => {
+    const assessments = currentCourse?.formativeAssessments || [];
+    const details = record.formativeDetails || {};
+    const preAssessments = assessments.filter(a => a.term === 'pre-midterm' || !a.term);
+
+    if (assessments.length === 0) {
+        if (record.preMidterm !== undefined) return Number(record.preMidterm || 0);
+        return Number(record.formative || 0);
+    }
+
+    return preAssessments.reduce((sum, assessment) => {
+        const key = getAssessmentKey(assessment);
+        return sum + Number(details[key] || 0);
+    }, 0);
+};
+
+const getConfiguredPostMidtermTotal = (record: any, currentCourse?: Course) => {
+    const assessments = currentCourse?.formativeAssessments || [];
+    const details = record.formativeDetails || {};
+    const postAssessments = assessments.filter(a => a.term === 'post-midterm');
+
+    if (assessments.length === 0) {
+        if (record.postMidterm !== undefined) return Number(record.postMidterm || 0);
+        return 0;
+    }
+
+    return postAssessments.reduce((sum, assessment) => {
+        const key = getAssessmentKey(assessment);
+        return sum + Number(details[key] || 0);
+    }, 0);
+};
+
 const toISODateString = (value: unknown): string | undefined => {
     if (!value) return undefined;
     if (typeof value === 'string') return value;
@@ -97,7 +129,9 @@ const processGradesSnapshot = (
             });
 
             const normalizedRecord = { ...bestRecord, formativeDetails: combinedDetails };
-            const f = getConfiguredFormativeTotal(normalizedRecord, currentCourse);
+            const preM = getConfiguredPreMidtermTotal(normalizedRecord, currentCourse);
+            const postM = getConfiguredPostMidtermTotal(normalizedRecord, currentCourse);
+            const f = preM + postM;
             const m = Number(bestRecord.midterm || 0);
             const fn = Number(bestRecord.final || 0);
             const total = f + m + fn;
@@ -110,6 +144,8 @@ const processGradesSnapshot = (
 
             newGrades[targetId] = {
                 ...bestRecord,
+                preMidterm: preM,
+                postMidterm: postM,
                 formative: f,
                 midterm: m,
                 final: fn,

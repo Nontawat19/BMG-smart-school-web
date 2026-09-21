@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import Swal from 'sweetalert2';
 import { doc, writeBatch, Timestamp, collection, getDoc, getDocs, deleteField } from 'firebase/firestore';
 import { firestore as db } from '@/firebase';
-import { GradeRecord, CharacteristicCriteria, ReadingWritingCriteria, Student, Course } from '../types';
+import { GradeRecord, CharacteristicCriteria, ReadingWritingCriteria, Student, Course, MaxScores } from '../types';
 import { CLASSES } from '@/utils/schoolUtils';
 import { mapSDQToCharacteristics } from '@/services/sdqService';
 import { getSDQCharacteristicType } from '../sdqCriteria';
@@ -17,7 +17,7 @@ export const useGradeBookActions = (
     students: Student[],
     characteristicsCriteria: CharacteristicCriteria[],
     readingWritingCriteria: ReadingWritingCriteria[],
-    maxScores: { formative: number; midterm: number; final: number },
+    maxScores: MaxScores,
     currentCourse: Course | undefined,
     courses: Course[],
     sdqMap: Record<string, any>,
@@ -127,17 +127,63 @@ export const useGradeBookActions = (
         return nextDetails;
     };
 
+    const distributeSubFormativeScore = (score: number, termType: 'pre-midterm' | 'post-midterm', existingDetails: Record<string, number> = {}) => {
+        const assessments = currentCourse?.formativeAssessments?.filter(a => {
+            const matchesTerm = termType === 'pre-midterm' ? (a.term === 'pre-midterm' || !a.term) : a.term === 'post-midterm';
+            return matchesTerm && (a.maxScore || 0) > 0;
+        }) || [];
+        if (assessments.length === 0) return existingDetails;
+
+        const nextDetails: Record<string, number> = { ...existingDetails };
+        assessments.forEach(a => {
+            nextDetails[getAssessmentKey(a)] = 0;
+        });
+
+        let remaining = Math.min(Math.max(0, score), assessments.reduce((sum, a) => sum + (a.maxScore || 0), 0));
+
+        while (remaining > 0) {
+            const available = assessments.filter(a => (nextDetails[getAssessmentKey(a)] || 0) < (a.maxScore || 0));
+            if (available.length === 0) break;
+
+            const amountPerSlot = Math.floor(remaining / available.length);
+            if (amountPerSlot === 0) {
+                for (let i = 0; i < remaining && i < available.length; i++) {
+                    const assessment = available[i];
+                    if (!assessment) continue;
+                    const key = getAssessmentKey(assessment);
+                    nextDetails[key] = (nextDetails[key] || 0) + 1;
+                }
+                remaining = 0;
+            } else {
+                let assigned = 0;
+                available.forEach(a => {
+                    const key = getAssessmentKey(a);
+                    const capacity = (a.maxScore || 0) - (nextDetails[key] || 0);
+                    const amount = Math.min(amountPerSlot, capacity);
+                    nextDetails[key] = (nextDetails[key] || 0) + amount;
+                    assigned += amount;
+                });
+                if (assigned === 0) break;
+                remaining -= assigned;
+            }
+        }
+
+        return nextDetails;
+    };
+
     const handleScoreChange = useCallback((studentId: string, field: string, value: string, criteriaId?: string) => {
         let numValue = field === 'status' ? 0 : (parseFloat(value) || 0);
 
         // Validation logic
-        if (field === 'formative') numValue = Math.min(Math.max(0, numValue), maxScores.formative);
+        if (field === 'preMidterm') numValue = Math.min(Math.max(0, numValue), maxScores.preMidterm ?? maxScores.formative);
+        else if (field === 'postMidterm') numValue = Math.min(Math.max(0, numValue), maxScores.postMidterm ?? 0);
+        else if (field === 'formative') numValue = Math.min(Math.max(0, numValue), maxScores.formative);
         else if (field === 'midterm') numValue = Math.min(Math.max(0, numValue), maxScores.midterm);
         else if (field === 'final') numValue = Math.min(Math.max(0, numValue), maxScores.final);
         else if (['characteristics', 'readingWriting'].includes(field)) numValue = Math.min(Math.max(0, numValue), 3);
 
         setGrades(prev => {
-            const current = prev[studentId] || { formative: 0, midterm: 0, final: 0, total: 0, grade: '0' };
+            const current = prev[studentId] || { formative: 0, preMidterm: 0, postMidterm: 0, midterm: 0, final: 0, total: 0, grade: '0' };
             let updated = { ...current };
 
             if (field === 'characteristics' && criteriaId) {
@@ -146,6 +192,14 @@ export const useGradeBookActions = (
                 updated.readingWritingScores = { ...(current.readingWritingScores || {}), [criteriaId]: numValue };
             } else if (field === 'status') {
                 updated.status = value || undefined;
+            } else if (field === 'preMidterm') {
+                updated.preMidterm = numValue;
+                updated.formativeDetails = distributeSubFormativeScore(numValue, 'pre-midterm', current.formativeDetails || {});
+                updated.formative = numValue + Number(updated.postMidterm || 0);
+            } else if (field === 'postMidterm') {
+                updated.postMidterm = numValue;
+                updated.formativeDetails = distributeSubFormativeScore(numValue, 'post-midterm', current.formativeDetails || {});
+                updated.formative = Number(updated.preMidterm || 0) + numValue;
             } else if (field === 'formative') {
                 updated.formative = numValue;
                 updated.formativeDetails = distributeFormativeScore(numValue, current.formativeDetails || {});
@@ -153,7 +207,7 @@ export const useGradeBookActions = (
                 (updated as any)[field] = numValue;
             }
 
-            if (['formative', 'midterm', 'final', 'status'].includes(field)) {
+            if (['preMidterm', 'postMidterm', 'formative', 'midterm', 'final', 'status'].includes(field)) {
                 updated.total = (updated.formative || 0) + (updated.midterm || 0) + (updated.final || 0);
                 updated.grade = updated.status || calculateGrade(updated.total);
             }
@@ -166,7 +220,7 @@ export const useGradeBookActions = (
         setGrades(prev => {
             const newGrades = { ...prev };
             students.forEach(student => {
-                const current = newGrades[student.id] || { formative: 0, midterm: 0, final: 0, total: 0, grade: '0' };
+                const current = newGrades[student.id] || { formative: 0, preMidterm: 0, postMidterm: 0, midterm: 0, final: 0, total: 0, grade: '0' };
                 let updated = { ...current };
 
                 if (activeTab === 'characteristics') {
@@ -190,6 +244,8 @@ export const useGradeBookActions = (
         let numValue = (parseInt(value) || 0);
 
         if (isCharOrRW) numValue = Math.min(Math.max(0, numValue), 3);
+        else if (key === 'preMidterm') numValue = Math.min(Math.max(0, numValue), maxScores.preMidterm ?? maxScores.formative);
+        else if (key === 'postMidterm') numValue = Math.min(Math.max(0, numValue), maxScores.postMidterm ?? 0);
         else if (key === 'formative') numValue = Math.min(Math.max(0, numValue), maxScores.formative);
         else if (key === 'midterm') numValue = Math.min(Math.max(0, numValue), maxScores.midterm);
         else if (key === 'final') numValue = Math.min(Math.max(0, numValue), maxScores.final);
@@ -199,12 +255,20 @@ export const useGradeBookActions = (
         setGrades(prev => {
             const newGrades = { ...prev };
             students.forEach(student => {
-                const current = newGrades[student.id] || { formative: 0, midterm: 0, final: 0, total: 0, grade: '0' };
+                const current = newGrades[student.id] || { formative: 0, preMidterm: 0, postMidterm: 0, midterm: 0, final: 0, total: 0, grade: '0' };
                 let updated = { ...current };
 
                 if (isCharOrRW && criteriaId) {
                     const field = activeTab === 'characteristics' ? 'characteristicsScores' : 'readingWritingScores';
                     updated[field] = { ...(current[field] || {}), [criteriaId]: numValue };
+                } else if (key === 'preMidterm') {
+                    updated.preMidterm = numValue;
+                    updated.formativeDetails = distributeSubFormativeScore(numValue, 'pre-midterm', current.formativeDetails || {});
+                    updated.formative = numValue + Number(updated.postMidterm || 0);
+                } else if (key === 'postMidterm') {
+                    updated.postMidterm = numValue;
+                    updated.formativeDetails = distributeSubFormativeScore(numValue, 'post-midterm', current.formativeDetails || {});
+                    updated.formative = Number(updated.preMidterm || 0) + numValue;
                 } else if (key === 'formative') {
                     updated.formative = numValue;
                     updated.formativeDetails = distributeFormativeScore(numValue, current.formativeDetails || {});
@@ -212,7 +276,7 @@ export const useGradeBookActions = (
                     (updated as any)[key] = numValue;
                 }
 
-                if (['formative', 'midterm', 'final'].includes(key)) {
+                if (['preMidterm', 'postMidterm', 'formative', 'midterm', 'final'].includes(key)) {
                     updated.total = (updated.formative || 0) + (updated.midterm || 0) + (updated.final || 0);
                     updated.grade = calculateGrade(updated.total);
                 }
@@ -433,6 +497,8 @@ export const useGradeBookActions = (
                 // Sanitize score data
                 const sanitizedRecord = {
                     ...record,
+                    preMidterm: Number(record.preMidterm || 0),
+                    postMidterm: Number(record.postMidterm || 0),
                     formative: Number(record.formative || 0),
                     midterm: Number(record.midterm || 0),
                     final: Number(record.final || 0),

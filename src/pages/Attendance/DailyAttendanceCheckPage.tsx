@@ -96,6 +96,7 @@ const DailyAttendanceCheckPage: React.FC = () => {
   const todayStr = getTodayString();
 
   const [isHomeroom, setIsHomeroom] = useState(false);
+  const [homeroomClass, setHomeroomClass] = useState<{ grade: string; room?: string } | null>(null);
   const [selectedClass, setSelectedClass] = useState("");
   const [availableLevels, setAvailableLevels] = useState<string[]>([]);
   const [selectedClassLevel, setSelectedClassLevel] = useState("");
@@ -114,7 +115,7 @@ const DailyAttendanceCheckPage: React.FC = () => {
   const [currentAcademicYear, setCurrentAcademicYear] = useState<string>("");
   const [behaviorScoreConfig, setBehaviorScoreConfig] = useState<any>(null);
 
-  // ตรวจว่าเป็นครูประจำชั้นไหม — auto-select ชั้น/ห้องให้เลย (เหมือน FlagCeremonyPage)
+  // ตรวจว่าเป็นครูประจำชั้นไหม — นำระดับชั้น/ห้องมาเป็นค่าเริ่มต้น แต่ยังสามารถเลือกระดับชั้นอื่นได้
   useEffect(() => {
     const checkTeacherStatus = async () => {
       if (!user?.uid || !schoolId) return;
@@ -124,7 +125,9 @@ const DailyAttendanceCheckPage: React.FC = () => {
         if (snap.exists()) {
           const data = snap.data();
           if (data.isHomeroomTeacher && data.homeroomGrade) {
-            setSelectedClass(data.homeroomRoom ? `${data.homeroomGrade}/${data.homeroomRoom}` : data.homeroomGrade);
+            setHomeroomClass({ grade: data.homeroomGrade, room: data.homeroomRoom ? String(data.homeroomRoom) : "" });
+            setSelectedClassLevel(data.homeroomGrade);
+            setSelectedRoom(data.homeroomRoom ? String(data.homeroomRoom) : "");
             setIsHomeroom(true);
           }
         }
@@ -136,11 +139,36 @@ const DailyAttendanceCheckPage: React.FC = () => {
   }, [user, schoolId]);
 
   useEffect(() => {
-    if (isHomeroom) return;
     if (selectedClassLevel && selectedRoom) setSelectedClass(`${selectedClassLevel}/${selectedRoom}`);
     else if (selectedClassLevel) setSelectedClass(selectedClassLevel);
     else setSelectedClass("");
-  }, [selectedClassLevel, selectedRoom, isHomeroom]);
+  }, [selectedClassLevel, selectedRoom]);
+
+// ดึงระดับชั้นที่เปิดสอนตามที่ตั้งค่าไว้ในหน้าข้อมูลโรงเรียน (/owner/school-info/:schoolId)
+const getLevelsFromSchoolSettings = (data?: any): string[] => {
+  const levelRange = data?.opportunityExpansionLevel;
+  const schoolType = data?.schoolType;
+
+  const kindergarten = ["อ.1", "อ.2", "อ.3"];
+  const primary = ["ป.1", "ป.2", "ป.3", "ป.4", "ป.5", "ป.6"];
+  const junior = ["ม.1", "ม.2", "ม.3"];
+  const senior = ["ม.4", "ม.5", "ม.6"];
+
+  if (levelRange === "ป.1-ป.6") return primary;
+  if (levelRange === "อ.1-ป.6") return [...kindergarten, ...primary];
+  if (levelRange === "ป.1-ม.3") return [...primary, ...junior];
+  if (levelRange === "อ.1-ม.3") return [...kindergarten, ...primary, ...junior];
+  if (levelRange === "ป.1-ม.6") return [...primary, ...junior, ...senior];
+  if (levelRange === "อ.1-ม.6") return [...kindergarten, ...primary, ...junior, ...senior];
+  if (levelRange === "ม.1-ม.6") return [...junior, ...senior];
+
+  // fallback ตามประเภทโรงเรียน (schoolType) กรณีไม่ได้ระบุ opportunityExpansionLevel
+  if (schoolType === "ประถม") return primary;
+  if (schoolType === "มัธยมศึกษา") return [...junior, ...senior];
+  if (schoolType === "ขยายโอกาส") return [...primary, ...junior];
+
+  return [...primary, ...junior, ...senior];
+};
 
   useEffect(() => {
     if (!schoolId) return;
@@ -149,16 +177,7 @@ const DailyAttendanceCheckPage: React.FC = () => {
       try {
         const schoolSnap = await getDoc(doc(firestore, "school-settings", schoolId));
         if (schoolSnap.exists()) {
-          const levelRange = schoolSnap.data().opportunityExpansionLevel;
-          const primary = ["ป.1", "ป.2", "ป.3", "ป.4", "ป.5", "ป.6"];
-          const junior = ["ม.1", "ม.2", "ม.3"];
-          const senior = ["ม.4", "ม.5", "ม.6"];
-          let levels: string[] = [...primary, ...junior, ...senior];
-          if (levelRange === "ป.1-ป.6") levels = primary;
-          else if (levelRange === "ม.1-ม.6") levels = [...junior, ...senior];
-          else if (levelRange === "ป.1-ม.3") levels = [...primary, ...junior];
-          else if (levelRange === "ป.1-ม.6") levels = [...primary, ...junior, ...senior];
-          setAvailableLevels(levels);
+          setAvailableLevels(getLevelsFromSchoolSettings(schoolSnap.data()));
         }
       } catch (err) {
         console.error("Error fetching school levels:", err);
@@ -168,7 +187,9 @@ const DailyAttendanceCheckPage: React.FC = () => {
 
     const unsubscribeConfig = onSnapshot(doc(firestore, "school-settings", schoolId), (snap) => {
       if (snap.exists()) {
-        setBehaviorScoreConfig(snap.data().behaviorScoreConfig || null);
+        const data = snap.data();
+        setBehaviorScoreConfig(data.behaviorScoreConfig || null);
+        setAvailableLevels(getLevelsFromSchoolSettings(data));
       }
     });
     const unsubscribeCalendar = onSnapshot(doc(firestore, "school-settings", schoolId, "main_calendar", "default"), (snap) => {
@@ -198,20 +219,84 @@ const DailyAttendanceCheckPage: React.FC = () => {
       setSelectionSnapshots(new Map());
       try {
         const [classLevel, room] = selectedClass.split("/");
-        const studentsQuery = room
-          ? query(
-              collection(firestore, "school-settings", schoolId, "students"),
-              where("classLevel", "==", classLevel),
-              where("room", "==", room)
-            )
-          : query(
-              collection(firestore, "school-settings", schoolId, "students"),
-              where("classLevel", "==", classLevel)
-            );
+        
+        // รองรับชื่อระดับชั้นทั้งแบบย่อและแบบเต็ม (เช่น "อ.1", "อนุบาล 1", "อนุบาล1")
+        const getClassLevelVariants = (lvl: string): string[] => {
+          const raw = (lvl || "").trim();
+          const variants = new Set<string>([raw]);
+          const kMatch = raw.match(/^(?:อ\.|อนุบาล|k)\s*(\d+)$/i);
+          if (kMatch) {
+            const n = kMatch[1];
+            variants.add(`อ.${n}`);
+            variants.add(`อนุบาล ${n}`);
+            variants.add(`อนุบาล${n}`);
+            variants.add(`k${n}`);
+          }
+          const pMatch = raw.match(/^(?:ป\.|ประถมศึกษาปีที่|p)\s*(\d+)$/i);
+          if (pMatch) {
+            const n = pMatch[1];
+            variants.add(`ป.${n}`);
+            variants.add(`ประถมศึกษาปีที่ ${n}`);
+            variants.add(`ประถมศึกษาปีที่${n}`);
+            variants.add(`p${n}`);
+          }
+          const mMatch = raw.match(/^(?:ม\.|มัธยมศึกษาปีที่|m)\s*(\d+)$/i);
+          if (mMatch) {
+            const n = mMatch[1];
+            variants.add(`ม.${n}`);
+            variants.add(`มัธยมศึกษาปีที่ ${n}`);
+            variants.add(`มัธยมศึกษาปีที่${n}`);
+            variants.add(`m${n}`);
+          }
+          return Array.from(variants);
+        };
 
-        const snapshot = await getDocs(studentsQuery);
-        const activeStudents = snapshot.docs
-          .map((d) => ({ id: d.id, ...d.data() } as any))
+        const variants = getClassLevelVariants(classLevel);
+        const queryPromises = variants.flatMap((lvlVariant) => {
+          if (!room) {
+            return [
+              getDocs(
+                query(
+                  collection(firestore, "school-settings", schoolId, "students"),
+                  where("classLevel", "==", lvlVariant)
+                )
+              ),
+            ];
+          }
+          const queries = [
+            getDocs(
+              query(
+                collection(firestore, "school-settings", schoolId, "students"),
+                where("classLevel", "==", lvlVariant),
+                where("room", "==", room)
+              )
+            ),
+          ];
+          const numRoom = Number(room);
+          if (!isNaN(numRoom) && String(numRoom) !== room) {
+            queries.push(
+              getDocs(
+                query(
+                  collection(firestore, "school-settings", schoolId, "students"),
+                  where("classLevel", "==", lvlVariant),
+                  where("room", "==", numRoom)
+                )
+              )
+            );
+          }
+          return queries;
+        });
+
+        const snapshots = await Promise.all(queryPromises);
+        const docsMap = new Map<string, any>();
+        snapshots.forEach((snap) => {
+          snap.docs.forEach((d) => {
+            if (!docsMap.has(d.id)) {
+              docsMap.set(d.id, { id: d.id, ...d.data() });
+            }
+          });
+        });
+        const activeStudents = Array.from(docsMap.values())
           .filter((s) => isActiveStudentSummaryStatus(getStudentStatus(s)));
 
         const enriched = await Promise.all(
@@ -230,7 +315,8 @@ const DailyAttendanceCheckPage: React.FC = () => {
               if (Object.values(STATUS).includes(st)) existingStatus = st;
             }
 
-            let defaultStatus: AttendanceStatus = STATUS.PRESENT;
+            // ค่าเริ่มต้นของการเช็คชื่อ: หากยังไม่เคยบันทึกสถานะมาก่อน ให้เป็น "ขาด" ไว้ก่อนตามที่ต้องการ
+            let defaultStatus: AttendanceStatus = STATUS.ABSENT;
             if (existingStatus) {
               defaultStatus = existingStatus;
             } else {
@@ -262,7 +348,12 @@ const DailyAttendanceCheckPage: React.FC = () => {
           })
         );
 
-        enriched.sort((a, b) => (a.studentId || "").localeCompare(b.studentId || "", "th"));
+        enriched.sort((a, b) => {
+          const numA = parseInt(a.number, 10);
+          const numB = parseInt(b.number, 10);
+          if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+          return (a.studentId || "").localeCompare(b.studentId || "", "th");
+        });
         setStudents(enriched);
       } catch (err: any) {
         console.error("Error fetching roster:", err);
@@ -463,35 +554,46 @@ const DailyAttendanceCheckPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="w-full md:w-72">
-              {isHomeroom ? (
-                <div className="w-full bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl px-4 py-2.5 text-indigo-900 dark:text-indigo-100 font-semibold text-center">
-                  ชั้น {selectedClass}
-                </div>
-              ) : (
-                <div className="flex gap-2">
-                  <select
-                    value={selectedClassLevel}
-                    onChange={(e) => setSelectedClassLevel(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm text-gray-900 dark:text-white"
-                  >
-                    <option value="">ชั้น</option>
-                    {availableLevels.map((level) => (
-                      <option key={level} value={level}>{level}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={selectedRoom}
-                    onChange={(e) => setSelectedRoom(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm text-gray-900 dark:text-white"
-                  >
-                    <option value="">ห้อง</option>
-                    {Array.from({ length: 20 }, (_, i) => i + 1).map((r) => (
-                      <option key={r} value={r}>{r}</option>
-                    ))}
-                  </select>
+            <div className="w-full md:w-80">
+              {homeroomClass && (
+                <div className="flex items-center justify-between text-xs text-indigo-600 dark:text-indigo-400 font-medium px-1 mb-1.5">
+                  <span>ประจำชั้น: {homeroomClass.grade}{homeroomClass.room ? `/${homeroomClass.room}` : ""}</span>
+                  {(selectedClassLevel !== homeroomClass.grade || selectedRoom !== (homeroomClass.room || "")) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedClassLevel(homeroomClass.grade);
+                        setSelectedRoom(homeroomClass.room || "");
+                      }}
+                      className="underline hover:text-indigo-800 dark:hover:text-indigo-200 transition-colors cursor-pointer"
+                    >
+                      เลือกห้องของฉัน
+                    </button>
+                  )}
                 </div>
               )}
+              <div className="flex gap-2">
+                <select
+                  value={selectedClassLevel}
+                  onChange={(e) => setSelectedClassLevel(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm text-gray-900 dark:text-white font-medium"
+                >
+                  <option value="">เลือกระดับชั้น</option>
+                  {availableLevels.map((level) => (
+                    <option key={level} value={level}>{level}</option>
+                  ))}
+                </select>
+                <select
+                  value={selectedRoom}
+                  onChange={(e) => setSelectedRoom(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm text-gray-900 dark:text-white font-medium"
+                >
+                  <option value="">ทุกห้อง</option>
+                  {Array.from({ length: 20 }, (_, i) => i + 1).map((r) => (
+                    <option key={r} value={String(r)}>ห้อง {r}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
@@ -594,53 +696,52 @@ const DailyAttendanceCheckPage: React.FC = () => {
                           toggleStudentSelection(student.id);
                         }
                       }}
-                      className={`relative rounded-2xl p-4 border-2 transition-all duration-200 cursor-pointer active:scale-[0.98] min-w-0 ${
+                      className={`relative rounded-2xl p-3.5 sm:p-4 border-2 transition-all duration-200 cursor-pointer active:scale-[0.98] min-w-0 ${
                         isSelected
                           ? "ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-50 dark:ring-offset-[#1e1f21]"
                           : "hover:shadow-lg"
                       } ${opt.cardClass}`}
                     >
                       {isSelected && (
-                        <span className="absolute top-3 right-3 inline-flex items-center gap-1 rounded-full bg-indigo-600 px-2 py-1 text-[11px] font-bold text-white shadow-lg z-10">
+                        <span className="absolute top-3 right-3 inline-flex items-center gap-1 rounded-full bg-indigo-600 px-2 py-0.5 text-[11px] font-bold text-white shadow-md z-10">
                           <FaCheck className="w-2.5 h-2.5" />
                           เลือกแล้ว
                         </span>
                       )}
 
-                      {/* Layout: มือถือ/PWA เรียงแนวนอน (รูป+ชื่อ) แล้วปุ่มเต็มความกว้างด้านล่าง
-                          จอกว้าง (sm ขึ้นไป) จัดกึ่งกลางแนวตั้งแทน (รูปใหญ่ขึ้น กลางจอ, ชื่อกึ่งกลางใต้รูป,
-                          ปุ่มเต็มความกว้างด้านล่างสุด) — ตำแหน่ง/สไตล์ปุ่มแบบเดียวกับหน้าเช็คขาดคาบ
-                          (ClassroomAttendance/StudentGrid.tsx) ตามที่ขอ */}
-                      <div className={isPwaMode ? "flex flex-col gap-3" : "flex flex-row sm:flex-col items-center gap-4"}>
-                        <div className={isPwaMode ? "flex items-center gap-3 min-w-0 pr-16" : "flex items-center gap-3 min-w-0 pr-16 sm:pr-0 sm:contents"}>
+                      <div className="flex flex-col gap-2.5 sm:gap-3">
+                        {/* ส่วนหัว: รูปโปรไฟล์ + ชื่อ-นามสกุล และรหัส/เลขที่ — แสดงชื่อเต็มชัดเจน ไม่ถูกเบียดเป็น เด็... บนมือถือ */}
+                        <div className="flex items-start gap-3 min-w-0 pr-16 sm:pr-20">
                           <div className="relative shrink-0">
                             <img
                               src={student.profileImageThumbUrl || student.profileImageUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(student.name)}&background=random`}
                               alt={student.name}
                               loading="lazy"
-                              // object-[50%_18%]: รูปนักเรียนมักเว้นพื้นหลังเหนือศีรษะไว้เยอะ ถ้าใช้ object-center
-                              // (ค่า default) เฟรมกลมจะครอปเอาคางลงมาแทนหน้าผาก/หูด้านบน ขยับจุดโฟกัสขึ้นไปที่ 18%
-                              // จากขอบบน (แทน 50%) ให้ตา-หู-จมูก-ปากอยู่กลางเฟรมพอดีโดยไม่ตัดศีรษะ — ค่าเดียวกับที่
-                              // ใช้ในหน้าเช็คแถว (FlagCeremonyPage)
-                              className={`rounded-full object-cover object-[50%_18%] border-4 border-white dark:border-[#2a2b2f] shadow-sm ${isPwaMode ? "w-14 h-14" : "w-16 h-16 sm:w-24 sm:h-24"}`}
+                              className="w-14 h-14 rounded-full object-cover object-[50%_18%] border-2 border-white dark:border-[#2a2b2f] shadow-sm"
                               onError={(e) => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(student.name)}&background=random`; }}
                             />
-                            <span className={`absolute bottom-0 right-0 sm:bottom-1 sm:right-1 w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 sm:border-4 border-white dark:border-[#2a2b2f] shadow-sm ${opt.dotClass}`} />
+                            <span className={`absolute bottom-0 right-0 w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full border-2 border-white dark:border-[#2a2b2f] shadow-sm ${opt.dotClass}`} />
                           </div>
-                          <div className={`min-w-0 ${isPwaMode ? "text-left" : "text-left sm:text-center"}`}>
-                            <p className="font-bold text-gray-900 dark:text-white truncate">{student.name}</p>
-                            <span className="inline-block max-w-full bg-white/50 dark:bg-black/20 px-2 py-0.5 rounded-md font-mono truncate text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
-                              รหัส {student.studentId} | เลขที่ {student.number || "-"}
-                            </span>
+                          <div className="min-w-0 flex-1 text-left">
+                            <p className="font-bold text-gray-900 dark:text-white text-sm sm:text-base leading-snug break-words" title={student.name}>
+                              {student.name}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                              {student.number && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-black/5 dark:bg-white/10 font-mono text-[11px] text-gray-700 dark:text-gray-200 font-semibold">
+                                  เลขที่ {student.number}
+                                </span>
+                              )}
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-black/5 dark:bg-white/10 font-mono text-[11px] text-gray-500 dark:text-gray-400">
+                                รหัส {student.studentId}
+                              </span>
+                            </div>
                           </div>
                         </div>
 
-                        {/* ปุ่มเช็คสถานะรายคน — คลิกตรงๆ ได้เลยไม่ต้องผ่าน dropdown, stopPropagation กันไม่ให้
-                            ไปสั่ง toggleStudentSelection ของทั้งการ์ดซ้อนกัน — "ไปร่วมกิจกรรม" แยกลงมาเป็น
-                            แถวเต็มความกว้างด้านล่างต่างหาก แบบเดียวกับปุ่ม "หนีเรียน" ในหน้าเช็คขาดคาบ เพราะ
-                            label ยาวกว่าสถานะอื่นมาก ใส่รวมแถวเดียวกัน 5 ช่องแล้วอ่านลำบาก */}
-                        <div className={`w-full min-w-0 flex flex-col gap-1.5 ${isPwaMode ? "mt-0" : "mt-4 sm:mt-2"}`} onClick={(e) => e.stopPropagation()}>
-                          <div className="grid grid-cols-4 gap-1.5">
+                        {/* ปุ่มเช็คสถานะรายคน — เพิ่มความสูงให้กดง่ายขึ้นทั้งบนมือถือและคอม */}
+                        <div className="w-full min-w-0 flex flex-col gap-2 pt-2.5 border-t border-black/5 dark:border-white/5" onClick={(e) => e.stopPropagation()}>
+                          <div className="grid grid-cols-4 gap-2">
                             {STATUS_OPTIONS.filter((o) => o.value !== STATUS.ACTIVITY).map((statusOpt) => {
                               const isActive = student.status === statusOpt.value;
                               return (
@@ -649,7 +750,7 @@ const DailyAttendanceCheckPage: React.FC = () => {
                                   type="button"
                                   title={statusOpt.label}
                                   onClick={() => setStudentStatus(student.id, statusOpt.value)}
-                                  className={`flex min-w-0 items-center justify-center rounded-xl font-bold text-center py-2 text-xs transition-all duration-200 ${
+                                  className={`flex min-w-0 items-center justify-center rounded-xl font-bold text-center py-3 sm:py-3.5 min-h-[44px] text-xs sm:text-sm transition-all duration-200 cursor-pointer active:scale-95 ${
                                     isActive
                                       ? `${statusOpt.activeClass} ring-2 ring-offset-1 ring-offset-white dark:ring-offset-[#2a2b2f]`
                                       : "bg-white/50 dark:bg-black/20 text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300"
@@ -668,13 +769,13 @@ const DailyAttendanceCheckPage: React.FC = () => {
                                 type="button"
                                 title={statusOpt.label}
                                 onClick={() => setStudentStatus(student.id, statusOpt.value)}
-                                className={`w-full flex min-w-0 items-center justify-center gap-1.5 rounded-xl font-bold py-1.5 text-xs transition-all duration-200 ${
+                                className={`w-full flex min-w-0 items-center justify-center gap-2 rounded-xl font-bold py-2.5 sm:py-3 min-h-[40px] text-xs sm:text-sm transition-all duration-200 cursor-pointer active:scale-[0.99] ${
                                   isActive
                                     ? `${statusOpt.activeClass} ring-2 ring-offset-1 ring-offset-white dark:ring-offset-[#2a2b2f]`
                                     : "bg-white/50 dark:bg-black/20 text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300"
                                 }`}
                               >
-                                <FaPlaneDeparture className="text-xs shrink-0" />
+                                <FaPlaneDeparture className="text-xs sm:text-sm shrink-0" />
                                 <span className="truncate">{statusOpt.label}</span>
                               </button>
                             );

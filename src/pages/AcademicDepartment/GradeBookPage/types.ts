@@ -75,6 +75,8 @@ export interface Teacher {
 
 export interface GradeRecord {
     formative: number;
+    preMidterm?: number;
+    postMidterm?: number;
     midterm: number;
     final: number;
     total: number;
@@ -87,6 +89,14 @@ export interface GradeRecord {
     // ชื่อฟิลด์คะแนน (assessment key, "midterm", "final") ที่ครูพิมพ์ "ร" ไว้จากหน้าบันทึกคะแนน — ใช้เช็คว่า
     // เกรดควรเป็น "ร" แทนที่จะคำนวณจาก total เฉยๆ (ดู useGradeBookData.ts)
     incompleteFields?: string[];
+}
+
+export interface MaxScores {
+    formative: number;
+    preMidterm: number;
+    postMidterm: number;
+    midterm: number;
+    final: number;
 }
 
 export interface ReadingWritingIndicator {

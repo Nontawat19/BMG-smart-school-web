@@ -16,7 +16,7 @@ import {
   setDoc,
   Timestamp,
 } from "firebase/firestore";
-import { getRoomType, getRoomTitle, parseStudentDirectRoomId, getChatSchoolId, markRoomRead, ChatMessageReplyTo, getMessageReadInfo, MessageReadInfo, SCHOOL_CHAT_ROOM_ID, toMillis } from "./chatConstants";
+import { getRoomType, getRoomTitle, parseStudentDirectRoomId, parseStaffDirectRoomId, getChatSchoolId, markRoomRead, ChatMessageReplyTo, getMessageReadInfo, MessageReadInfo, SCHOOL_CHAT_ROOM_ID, toMillis } from "./chatConstants";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 
 // รูปโปรไฟล์แคชง่ายๆ กันยิง getDoc อ่าน school-settings/{schoolId} ซ้ำทุกครั้งที่เปิดห้องแชทของ
@@ -171,7 +171,8 @@ export const useChatMessages = (roomId: string, active: boolean = true) => {
   const parentStudentId = roomType === "parent" ? roomId.replace(/^parent-/, "") : "";
   const homeroomStudentId = roomType === "student-homeroom" ? roomId.replace(/^student-homeroom-/, "") : "";
   const directParts = roomType === "student-direct" ? parseStudentDirectRoomId(roomId) : null;
-  const isOneOnOneRoom = roomType === "parent" || roomType === "student-direct" || roomType === "student-homeroom";
+  const staffDirectParts = roomType === "staff-direct" ? parseStaffDirectRoomId(roomId) : null;
+  const isOneOnOneRoom = roomType === "parent" || roomType === "student-direct" || roomType === "student-homeroom" || roomType === "staff-direct";
 
   // ข้อมูลฝั่งตรงข้าม (รูป+ชื่อ สำหรับหัวข้อห้อง)
   // - parent-* : ผู้ปกครองเห็น "ครูประจำชั้น [ระดับชั้น]" + โลโก้โรงเรียน (ไม่ระบุชื่อครูคนใดคนหนึ่ง
@@ -179,6 +180,7 @@ export const useChatMessages = (roomId: string, active: boolean = true) => {
   //   ของแต่ละข้อความแทน) ส่วนครูเห็นรูป+ชื่อนักเรียน ขึ้นต้นด้วย "ผู้ปกครอง" (ผู้ปกครองไม่มีรูปแยกในระบบ)
   // - student-homeroom-* : คู่กับ parent-* แต่ฝั่งนักเรียนเข้าเอง หลักการเดียวกันทุกอย่าง
   // - student-direct-* : แชทเลือกครูเอง แสดงรูป+ชื่อของอีกฝ่ายตรงๆ ไม่มีการ "ปิดบัง" ตัวตน
+  // - staff-direct-* : แชท 1 ต่อ 1 ระหว่างครู/บุคลากร แสดงรูป+ชื่อจริงของเพื่อนร่วมงานตรงๆ
   useEffect(() => {
     if (!schoolId) return;
     if (roomType === "school" || roomId === SCHOOL_CHAT_ROOM_ID) {
@@ -214,8 +216,18 @@ export const useChatMessages = (roomId: string, active: boolean = true) => {
         setOtherPartyName(personDisplayName(data));
         setOtherPartyPhotoUrl(personPhotoUrl(data));
       }).catch((error) => console.error("Error loading other party name for chat room:", error));
+    } else if (roomType === "staff-direct" && staffDirectParts) {
+      const myUid = auth.currentUser?.uid || currentUser?.uid || "";
+      const otherUid = staffDirectParts.uid1 === myUid ? staffDirectParts.uid2 : staffDirectParts.uid1;
+      setTargetPartyUid(otherUid);
+      getDoc(doc(firestore, "school-settings", schoolId, "teachers", otherUid)).then((snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data();
+        setOtherPartyName(personDisplayName(data));
+        setOtherPartyPhotoUrl(personPhotoUrl(data));
+      }).catch((error) => console.error("Error loading other staff name for chat room:", error));
     }
-  }, [roomType, schoolId, roomId, parentStudentId, homeroomStudentId, directParts, isStudentSession, isParentSession]);
+  }, [roomType, schoolId, roomId, parentStudentId, homeroomStudentId, directParts, staffDirectParts, isStudentSession, isParentSession, currentUser?.uid]);
 
   const [roomReadBy, setRoomReadBy] = useState<Record<string, any>>({});
   const [myGroupChildId, setMyGroupChildId] = useState<string | null>(null);
@@ -598,7 +610,7 @@ export const useChatMessages = (roomId: string, active: boolean = true) => {
         };
       }
       await addDoc(collection(firestore, "school-settings", schoolId, "chatRooms", roomId, "messages"), messageData);
-      await setDoc(doc(firestore, "school-settings", schoolId, "chatRooms", roomId), {
+      const roomUpdate: Record<string, unknown> = {
         lastMessageText: lastMessagePreview,
         lastMessageAt: serverTimestamp(),
         lastMessageSenderUid: sender.senderUid,
@@ -607,13 +619,18 @@ export const useChatMessages = (roomId: string, active: boolean = true) => {
           [`role_${sender.senderRole}`]: serverTimestamp(),
           ...(sender.senderStableId ? { [`stable_${sender.senderStableId}`]: serverTimestamp() } : {}),
         },
-      }, { merge: true });
+      };
+      if (roomType === "staff-direct" && staffDirectParts) {
+        roomUpdate.type = "staff-direct";
+        roomUpdate.memberUids = [staffDirectParts.uid1, staffDirectParts.uid2];
+      }
+      await setDoc(doc(firestore, "school-settings", schoolId, "chatRooms", roomId), roomUpdate, { merge: true });
     } catch (error) {
       console.error("Error sending chat message:", error);
     } finally {
       setIsSending(false);
     }
-  }, [schoolId, roomId, isSending, resolveSender, roomType, roomStatus, isDeptMember]);
+  }, [schoolId, roomId, isSending, resolveSender, roomType, roomStatus, isDeptMember, staffDirectParts]);
 
   const sendMessage = useCallback(async (text: string, replyTo?: ChatMessageReplyTo | null) => {
     const trimmed = text.trim();

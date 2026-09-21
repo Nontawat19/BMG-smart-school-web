@@ -3,7 +3,7 @@ import GradeBookStats from './GradeBookStats';
 import GradeBookTable from './GradeBookTable';
 import GradeBookLegend from './GradeBookLegend';
 import GradeBookSummary from './GradeBookSummary';
-import { Student, GradeRecord, CharacteristicCriteria, ReadingWritingCriteria } from '../types';
+import { Student, GradeRecord, CharacteristicCriteria, ReadingWritingCriteria, MaxScores, Course } from '../types';
 import SkeletonLoader from '@/components/SkeletonLoader';
 import Swal from 'sweetalert2';
 
@@ -16,9 +16,12 @@ interface GradeBookResultsProps {
     completenessDisplay: { percentage: number; filled: number; total: number };
     characteristicsCriteria: CharacteristicCriteria[];
     readingWritingCriteria: ReadingWritingCriteria[];
-    maxScores: { formative: number; midterm: number; final: number };
+    maxScores: MaxScores;
     selectedClass: string;
     selectedCourse: string;
+    selectedRoom?: string;
+    effectiveSemester?: string;
+    currentCourse?: Course;
     sdqMap: Record<string, any>;
     scoreDistribution: any;
     formatPrefix: (prefix?: string) => string;
@@ -40,6 +43,9 @@ const GradeBookResults: React.FC<GradeBookResultsProps> = ({
     maxScores,
     selectedClass,
     selectedCourse,
+    selectedRoom,
+    effectiveSemester,
+    currentCourse,
     sdqMap,
     scoreDistribution,
     formatPrefix,
@@ -58,25 +64,18 @@ const GradeBookResults: React.FC<GradeBookResultsProps> = ({
                 timer: 5000,
                 timerProgressBar: true,
                 icon: 'success',
-                title: 'ข้อมูลสำคัญครบถ้วนแล้ว!',
-                text: 'คุณสามารถออกไฟล์ PDF ได้ทันที',
-                background: '#f0fdf4',
-                color: '#166534',
-                iconColor: '#22c55e',
-                didOpen: (toast) => {
-                    toast.addEventListener('mouseenter', Swal.stopTimer);
-                    toast.addEventListener('mouseleave', Swal.resumeTimer);
-                }
+                title: 'ข้อมูลครบถ้วนพร้อมสำหรับพิมพ์ ปพ.5 แล้ว'
             });
         }
-    }, [completenessStats?.isReadyForPdf, selectedCourse]);
+    }, [completenessStats?.isReadyForPdf]);
 
     if (loading) {
         return (
-            <div className="p-6 space-y-4 bg-white dark:bg-[#2a2b2f] rounded-2xl border border-gray-100 dark:border-gray-700">
-                <SkeletonLoader height="100px" className="rounded-2xl" />
-                <div className="grid grid-cols-5 gap-3">
-                    {[...Array(5)].map((_, i) => <SkeletonLoader key={i} height="80px" className="rounded-xl" />)}
+            <div className="space-y-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {[1, 2, 3, 4].map(i => (
+                        <SkeletonLoader key={i} height="80px" className="rounded-2xl" />
+                    ))}
                 </div>
                 <SkeletonLoader height="400px" className="rounded-2xl" />
             </div>
@@ -103,6 +102,9 @@ const GradeBookResults: React.FC<GradeBookResultsProps> = ({
                     maxScores={maxScores}
                     selectedClass={selectedClass}
                     selectedCourse={selectedCourse}
+                    selectedRoom={selectedRoom}
+                    effectiveSemester={effectiveSemester}
+                    currentCourse={currentCourse}
                     sdqMap={sdqMap}
                     formatPrefix={formatPrefix}
                     handleScoreChange={handleScoreChange}

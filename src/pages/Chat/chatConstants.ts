@@ -46,17 +46,31 @@ export const parseStudentDirectRoomId = (roomId: string): { teacherUid: string; 
   return { teacherUid: match[1], studentId: match[2] };
 };
 
+// ห้องแชทตรง 1 ต่อ 1 ระหว่างครู/บุคลากรด้วยกันเอง (ไม่ผ่านการขออนุญาต คุยกันได้ทันที)
+// ใช้ deterministic id โดยเรียง uid ตามลำดับตัวอักษร เพื่อให้ทั้งสองฝ่ายได้ห้องเดียวกันเสมอ
+export const staffDirectRoomId = (uid1: string, uid2: string) => {
+  const [first, second] = [uid1, uid2].sort();
+  return `staff-direct-${first}_${second}`;
+};
+
+export const parseStaffDirectRoomId = (roomId: string): { uid1: string; uid2: string } | null => {
+  const match = roomId.match(/^staff-direct-(.+)_([^_]+)$/);
+  if (!match) return null;
+  return { uid1: match[1], uid2: match[2] };
+};
+
 // ห้องกลุ่มแชทที่ครูสร้างเอง (เช่น กลุ่มผู้ปกครองของห้องเรียน) ไม่มีรูปแบบ id ตายตัวเหมือนห้องอื่นๆ
 // (ไม่ได้อิงจาก studentId/teacherUid) จึงใช้ Firestore auto-id แบบสุ่ม 20 ตัวอักษรแทน แล้วเติม prefix
 // "group-" ไว้ให้ getRoomType() จำแนกประเภทได้ ตัว id ที่สุ่มมานี้เดายากอยู่แล้วโดยธรรมชาติ (เหมือนหลักการ
 // เดียวกับห้อง parent-*/student-homeroom-* ที่อาศัยความเดายากของ id เป็นตัวควบคุมสิทธิ์การเข้าถึง)
 export const createGroupRoomId = () => `group-${doc(collection(firestore, "chatRooms")).id}`;
 
-export type ChatRoomType = "school" | "department" | "parent" | "student-direct" | "student-homeroom" | "group";
+export type ChatRoomType = "school" | "department" | "parent" | "student-direct" | "student-homeroom" | "group" | "staff-direct";
 
 export const getRoomType = (roomId: string): ChatRoomType => {
   if (roomId === SCHOOL_CHAT_ROOM_ID) return "school";
   if (roomId.startsWith("dept-")) return "department";
+  if (roomId.startsWith("staff-direct-")) return "staff-direct";
   if (roomId.startsWith("student-direct-")) return "student-direct";
   if (roomId.startsWith("student-homeroom-")) return "student-homeroom";
   if (roomId.startsWith("group-")) return "group";
@@ -141,10 +155,26 @@ export const getMessageReadInfo = (
     return { isRead: false, readCount: 0, label: "" };
   }
 
-  // 1-on-1 direct chats: parent, student-homeroom, student-direct
-  const isDirect = roomType === "parent" || roomType === "student-homeroom" || roomType === "student-direct";
+  // 1-on-1 direct chats: parent, student-homeroom, student-direct, staff-direct
+  const isDirect = roomType === "parent" || roomType === "student-homeroom" || roomType === "student-direct" || roomType === "staff-direct";
 
   if (isDirect) {
+    if (roomType === "staff-direct") {
+      // แชท 1 ต่อ 1 ระหว่างครู/บุคลากร: เช็คเวลาอ่านของคู่สนทนา (ตัด uid ตนเอง และ role ทั่วไปออก)
+      let otherReadTime = 0;
+      for (const [key, val] of Object.entries(roomReadBy)) {
+        if (key === msg.senderUid || key === currentSenderUid || key.startsWith("role_") || key.startsWith("stable_")) continue;
+        const t = toMillis(val);
+        if (t > otherReadTime) otherReadTime = t;
+      }
+      const isRead = otherReadTime >= (msgTime - 1500);
+      return {
+        isRead,
+        readCount: isRead ? 1 : 0,
+        label: isRead ? "อ่านแล้ว" : "",
+      };
+    }
+
     // กำหนดว่าผู้ส่งข้อความเป็นฝั่งโรงเรียน (ครู/เจ้าหน้าที่) หรือฝั่งครอบครัว (นักเรียน/ผู้ปกครอง)
     const senderWasSchool =
       msg.senderRole === "teacher" ||
@@ -215,7 +245,7 @@ export const getMessageReadInfo = (
   };
 };
 
-// ห้อง parent-*/student-direct-* เป็นแชท 1 ต่อ 1 เสมอ — otherPartyName (ที่ useChatMessages.ts
+// ห้อง parent-*/student-direct-*/staff-direct-* เป็นแชท 1 ต่อ 1 เสมอ — otherPartyName (ที่ useChatMessages.ts
 // ประกอบมาให้แล้ว รวม prefix "ผู้ปกครอง" ในกรณีที่ต้องมี) จึงใช้เป็นหัวข้อได้ตรงๆ ไม่ต้องพันด้วยข้อความ
 // อธิบายบทบาทซ้ำอีกชั้น เพราะตอนนี้มีรูปโปรไฟล์ประกอบข้าง header อยู่แล้ว
 export const getRoomTitle = (roomId: string, otherPartyName?: string): string => {
@@ -223,6 +253,7 @@ export const getRoomTitle = (roomId: string, otherPartyName?: string): string =>
   const dept = DEPARTMENT_CHATS.find((d) => d.roomId === roomId);
   if (dept) return `แชท${dept.label}`;
   const roomType = getRoomType(roomId);
+  if (roomType === "staff-direct") return otherPartyName || "แชทครู/บุคลากร";
   if (roomType === "student-direct") return otherPartyName || "แชทครู-นักเรียน";
   if (roomType === "student-homeroom") return otherPartyName || "แชทครูประจำชั้น";
   if (roomType === "group") return otherPartyName || "แชทกลุ่ม";

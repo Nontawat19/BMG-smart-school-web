@@ -1,9 +1,13 @@
-import React from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import Swal from 'sweetalert2';
 import {
     Student,
     GradeRecord,
     CharacteristicCriteria,
-    ReadingWritingCriteria
+    ReadingWritingCriteria,
+    MaxScores,
+    Course
 } from '../types';
 import { isSDQCharacteristic } from '../sdqCriteria';
 
@@ -13,9 +17,12 @@ interface GradeBookTableProps {
     grades: Record<string, GradeRecord>;
     characteristicsCriteria: CharacteristicCriteria[];
     readingWritingCriteria: ReadingWritingCriteria[];
-    maxScores: { formative: number; midterm: number; final: number };
+    maxScores: MaxScores;
     selectedClass: string;
     selectedCourse: string;
+    selectedRoom?: string;
+    effectiveSemester?: string;
+    currentCourse?: Course;
     sdqMap: Record<string, any>;
     formatPrefix: (prefix?: string) => string;
     handleScoreChange: (studentId: string, field: string, value: string, criteriaId?: string) => void;
@@ -33,6 +40,9 @@ const GradeBookTable: React.FC<GradeBookTableProps> = ({
     maxScores,
     selectedClass,
     selectedCourse,
+    selectedRoom,
+    effectiveSemester,
+    currentCourse,
     sdqMap,
     formatPrefix,
     handleScoreChange,
@@ -40,18 +50,106 @@ const GradeBookTable: React.FC<GradeBookTableProps> = ({
     handleSyncSDQColumn,
     getOverallQuality
 }) => {
-
+    const navigate = useNavigate();
     const isCharacteristics = activeTab === 'characteristics';
     const isRW = activeTab === 'readingWriting';
     const hasSDQData = Object.keys(sdqMap || {}).length > 0;
     const scoreInputClass = "w-16 h-9 text-center bg-slate-900/5 dark:bg-slate-800 border rounded-xl text-sm font-black focus:ring-2 outline-none transition-all shadow-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
 
+    // ระบบป้องกันการเผลอเขียนทับคะแนนย่อย: หากยืนยันแล้วจะจำไว้สำหรับ session นี้ เพื่อไม่ให้ถามซ้ำทุกครั้งที่พิมพ์
+    const [confirmedTerms, setConfirmedTerms] = useState<Record<'pre-midterm' | 'post-midterm', boolean>>({
+        'pre-midterm': false,
+        'post-midterm': false
+    });
+
+    useEffect(() => {
+        setConfirmedTerms({ 'pre-midterm': false, 'post-midterm': false });
+    }, [selectedCourse, selectedClass]);
+
+    const getAssessmentKey = (assessment: { id?: string; name?: string; title?: string }): string => {
+        return (assessment.id || (assessment as any).title || assessment.name || '').trim();
+    };
+
+    // นับจำนวนตัวชี้วัดที่มีคะแนนบันทึกไว้ใน formativeDetails
+    const getDetailedCount = useCallback((studentId: string, term: 'pre-midterm' | 'post-midterm') => {
+        if (!currentCourse?.formativeAssessments || currentCourse.formativeAssessments.length <= 1) return 0;
+        const items = currentCourse.formativeAssessments.filter(a => {
+            if ((a.maxScore || 0) <= 0) return false;
+            return term === 'pre-midterm' 
+                ? (a.term === 'pre-midterm' || !a.term)
+                : (a.term === 'post-midterm');
+        });
+        if (items.length <= 1) return 0;
+
+        const details = grades[studentId]?.formativeDetails;
+        if (!details) return 0;
+
+        const filled = items.filter(it => {
+            const key = getAssessmentKey(it);
+            const val = details[key];
+            return val !== undefined && val !== null && Number(val) > 0;
+        });
+        return filled.length;
+    }, [currentCourse, grades]);
+
+    const handleConfirmOverwrite = useCallback(async (
+        studentId: string,
+        term: 'pre-midterm' | 'post-midterm',
+        studentName: string
+    ): Promise<boolean> => {
+        if (confirmedTerms[term]) return true;
+        const count = getDetailedCount(studentId, term);
+        if (count === 0) return true;
+
+        const termTitle = term === 'pre-midterm' ? 'ก่อนกลางภาค' : 'หลังกลางภาค';
+        const pageTitle = term === 'pre-midterm' ? 'คะแนนระหว่างภาค' : 'คะแนนหลังกลางภาค';
+        const targetUrl = term === 'pre-midterm'
+            ? `/academic/formative-scores?level=${encodeURIComponent(selectedClass)}&room=${encodeURIComponent(selectedRoom || '')}&semester=${encodeURIComponent(effectiveSemester || '')}&courseId=${encodeURIComponent(selectedCourse)}`
+            : `/academic/post-midterm-scores?level=${encodeURIComponent(selectedClass)}&room=${encodeURIComponent(selectedRoom || '')}&semester=${encodeURIComponent(effectiveSemester || '')}&courseId=${encodeURIComponent(selectedCourse)}`;
+
+        const result = await Swal.fire({
+            title: `พบข้อมูลคะแนนย่อย (${termTitle})`,
+            html: `
+                <div style="text-align: left; font-size: 13px; line-height: 1.6; color: #475569;">
+                    <p style="margin-bottom: 8px;">นักเรียน <b>${studentName}</b> มีคะแนนเก็บย่อยบันทึกไว้อยู่แล้ว (${count} ช่อง)</p>
+                    <div style="background-color: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 10px 12px; color: #b45309; margin-bottom: 10px; font-size: 12px;">
+                        ⚠️ <b>คำเตือน:</b> หากท่านแก้ไขคะแนนรวมที่นี่ ระบบจะ <b>คำนวณเกลี่ยคะแนนตามสัดส่วนทับคะแนนย่อยเดิม</b>
+                    </div>
+                    <p style="font-size: 12px; color: #64748b;">
+                        ต้องการให้ระบบเกลี่ยใหม่ หรือต้องการไปแก้ไขที่หน้า <b>${pageTitle}</b>?
+                    </p>
+                </div>
+            `,
+            icon: 'warning',
+            showCancelButton: true,
+            showDenyButton: true,
+            confirmButtonText: 'ยืนยันเกลี่ยคะแนนใหม่',
+            denyButtonText: `ไปกรอกที่หน้า ${pageTitle} ↗`,
+            cancelButtonText: 'ยกเลิก (คงคะแนนเดิม)',
+            confirmButtonColor: '#4f46e5',
+            denyButtonColor: '#0ea5e9',
+            cancelButtonColor: '#64748b',
+            customClass: {
+                popup: 'rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800',
+            }
+        });
+
+        if (result.isConfirmed) {
+            setConfirmedTerms(prev => ({ ...prev, [term]: true }));
+            return true;
+        } else if (result.isDenied) {
+            navigate(targetUrl);
+            return false;
+        }
+        return false;
+    }, [confirmedTerms, getDetailedCount, selectedClass, selectedRoom, effectiveSemester, selectedCourse, navigate]);
+
     return (
         <div className={`overflow-x-auto ${(isCharacteristics || isRW) ? 'scrollbar-hide' : ''}`}>
-            <table className={`w-full text-left border-collapse ${(isCharacteristics || isRW) ? 'table-fixed' : 'table-auto'}`} style={(isCharacteristics || isRW) ? { minWidth: 'fit-content' } : {}}>
-                <thead>
-                    {activeTab === 'characteristics' ? (
-                        <>
+                <table className={`w-full text-left border-collapse ${(isCharacteristics || isRW) ? 'table-fixed' : 'table-auto'}`} style={(isCharacteristics || isRW) ? { minWidth: 'fit-content' } : {}}>
+                    <thead>
+                        {activeTab === 'characteristics' ? (
+                            <>
                             {/* Header Row 1: Titles - Adaptive Theme */}
                             <tr className="bg-slate-700 dark:bg-slate-900 border-b border-slate-800 dark:border-slate-950 transition-colors">
                                 <th className="px-1 py-3 w-10 sticky left-0 bg-slate-700 dark:bg-slate-900 z-30 text-[10px] text-white/80 dark:text-gray-300 text-center font-bold">เลขที่</th>
@@ -177,9 +275,44 @@ const GradeBookTable: React.FC<GradeBookTableProps> = ({
                             <th className="px-1 py-3 font-bold text-[10px] w-10 sticky left-0 bg-slate-50 dark:bg-slate-900 z-20 border-r dark:border-slate-800 text-center uppercase tracking-tighter text-slate-500">เลขที่</th>
                             <th className="px-1 py-3 font-bold text-[10px] w-16 sticky left-10 bg-slate-50 dark:bg-slate-900 z-20 border-r dark:border-slate-800 text-center uppercase tracking-tighter text-slate-500">รหัส</th>
                             <th className="px-4 py-3 font-bold text-[11px] min-w-[180px] sticky left-[104px] bg-slate-50 dark:bg-slate-900 z-20 border-r dark:border-slate-800 text-slate-700 dark:text-slate-300">ชื่อ-นามสกุล</th>
-                            <th className="px-3 py-3 text-center font-bold text-blue-600 dark:text-blue-400 border-r dark:border-slate-800 text-[11px]">คะแนนเก็บ ({maxScores.formative})</th>
+                            <th className="px-3 py-2 text-center border-r dark:border-slate-800">
+                                <div className="flex flex-col items-center gap-1">
+                                    <span className="font-bold text-indigo-600 dark:text-indigo-400 text-[11px]">
+                                        ก่อนกลางภาค ({maxScores.preMidterm})
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => navigate(`/academic/formative-scores?level=${encodeURIComponent(selectedClass)}&room=${encodeURIComponent(selectedRoom || '')}&semester=${encodeURIComponent(effectiveSemester || '')}&courseId=${encodeURIComponent(selectedCourse)}`)}
+                                        className="inline-flex items-center gap-1 text-[9px] font-semibold text-indigo-600 hover:text-indigo-800 dark:text-indigo-300 dark:hover:text-indigo-100 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 px-2 py-0.5 rounded-full border border-indigo-200/60 dark:border-indigo-800/40 transition-colors"
+                                        title="เปิดหน้ากรอกคะแนนย่อย (ก่อนกลางภาค)"
+                                    >
+                                        <span>คะแนนย่อย</span>
+                                        <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </th>
                             <th className="px-3 py-3 text-center font-bold text-orange-600 dark:text-orange-400 border-r dark:border-slate-800 text-[11px]">กลางภาค ({maxScores.midterm})</th>
-                            <th className="px-3 py-3 text-center font-bold text-emerald-600 dark:text-emerald-400 border-r dark:border-slate-800 text-[11px]">ปลายภาค ({maxScores.final})</th>
+                            <th className="px-3 py-2 text-center border-r dark:border-slate-800">
+                                <div className="flex flex-col items-center gap-1">
+                                    <span className="font-bold text-emerald-600 dark:text-emerald-400 text-[11px]">
+                                        หลังกลางภาค ({maxScores.postMidterm})
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => navigate(`/academic/post-midterm-scores?level=${encodeURIComponent(selectedClass)}&room=${encodeURIComponent(selectedRoom || '')}&semester=${encodeURIComponent(effectiveSemester || '')}&courseId=${encodeURIComponent(selectedCourse)}`)}
+                                        className="inline-flex items-center gap-1 text-[9px] font-semibold text-emerald-600 hover:text-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-100 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200/60 dark:border-emerald-800/40 transition-colors"
+                                        title="เปิดหน้ากรอกคะแนนย่อย (หลังกลางภาค)"
+                                    >
+                                        <span>คะแนนย่อย</span>
+                                        <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </th>
+                            <th className="px-3 py-3 text-center font-bold text-rose-600 dark:text-rose-400 border-r dark:border-slate-800 text-[11px]">ปลายภาคเรียน ({maxScores.final})</th>
                             <th className="px-3 py-3 text-center font-black text-indigo-600 dark:text-indigo-400 border-r dark:border-slate-800 text-[11px]">รวม</th>
                             <th className="px-6 py-3 text-center font-bold text-slate-700 dark:text-slate-300 sticky right-0 z-20 bg-slate-50 dark:bg-slate-900 shadow-[-4px_0_10px_-4px_rgba(0,0,0,0.1)] text-[11px]">เกรด / ผลการเรียน</th>
                         </tr>
@@ -187,7 +320,9 @@ const GradeBookTable: React.FC<GradeBookTableProps> = ({
                 </thead>
                 <tbody className={`divide-y ${(isCharacteristics || isRW) ? 'divide-gray-100 dark:divide-gray-800 bg-white dark:bg-[#0d0d0d]' : 'divide-gray-100 dark:divide-gray-800'}`}>
                     {filteredStudents.map((student) => {
-                        const record = grades[student.id] || { formative: 0, midterm: 0, final: 0, total: 0, grade: '0' };
+                        const record = grades[student.id] || { formative: 0, preMidterm: 0, postMidterm: 0, midterm: 0, final: 0, total: 0, grade: '0' };
+                        const detailedPreCount = getDetailedCount(student.id, 'pre-midterm');
+                        const detailedPostCount = getDetailedCount(student.id, 'post-midterm');
                         // ล็อกเป็น "มส" อัตโนมัติจากเวลาเรียนต่ำกว่าร้อยละ 80 (คำนวณไว้แล้วที่ GradeBookPage.tsx
                         // ผ่าน effectiveGrades) — ปุ่ม 0/ร/มส แก้ไขไม่ได้จนกว่าเวลาเรียนจะกลับมาผ่านเกณฑ์
                         const isAttendanceForced = Boolean(record.remark?.startsWith('เวลาเรียนไม่ถึงร้อยละ 80'));
@@ -267,19 +402,41 @@ const GradeBookTable: React.FC<GradeBookTableProps> = ({
                                         </td>
                                     </>
                                 ) : (
-                                    /* Grades Body - Optimized Compact UI */
+                                    /* Grades Body - Optimized Compact UI with 4 Score Columns */
                                     <>
-                                        <td className="px-2 py-3 bg-blue-50/50 dark:bg-blue-900/5 text-center border-r border-blue-100/50 dark:border-slate-800">
+                                        {/* 1. ก่อนกลางภาค */}
+                                        <td className="px-2 py-3 bg-indigo-50/50 dark:bg-indigo-900/5 text-center border-r border-indigo-100/50 dark:border-slate-800 relative">
+                                            {detailedPreCount > 0 && (
+                                                <span 
+                                                    title={`มีคะแนนย่อยแล้ว (${detailedPreCount} ช่อง)`}
+                                                    className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-indigo-500 shadow-sm"
+                                                />
+                                            )}
                                             <input 
                                                 type="text"
                                                 inputMode="decimal"
-                                                value={record.formative || 0} 
-                                                onFocus={(e) => e.currentTarget.select()}
-                                                onChange={(e) => handleScoreChange(student.id, 'formative', e.target.value)} 
-                                                title="แก้คะแนนเก็บรวม ระบบจะเกลี่ยลงหัวข้อย่อยอัตโนมัติ"
-                                                className={`${scoreInputClass} border-blue-200 dark:border-blue-500/30 focus:ring-blue-500/50 text-blue-600 dark:text-blue-400`} 
+                                                value={record.preMidterm !== undefined ? record.preMidterm : (record.formative || 0)} 
+                                                onFocus={async (e) => {
+                                                    e.currentTarget.select();
+                                                    if (!confirmedTerms['pre-midterm'] && detailedPreCount > 0) {
+                                                        e.currentTarget.blur();
+                                                        const inputEl = e.currentTarget;
+                                                        const studentName = `${formatPrefix(student.title)}${student.firstName} ${student.lastName}`;
+                                                        const proceed = await handleConfirmOverwrite(student.id, 'pre-midterm', studentName);
+                                                        if (proceed) {
+                                                            setTimeout(() => {
+                                                                inputEl.focus();
+                                                                inputEl.select();
+                                                            }, 50);
+                                                        }
+                                                    }
+                                                }}
+                                                onChange={(e) => handleScoreChange(student.id, 'preMidterm', e.target.value)} 
+                                                title={detailedPreCount > 0 ? `มีคะแนนย่อยแล้ว ${detailedPreCount} ช่อง (หากแก้ไขจะเกลี่ยทับ)` : "คะแนนเก็บก่อนกลางภาค"}
+                                                className={`${scoreInputClass} border-indigo-200 dark:border-indigo-500/30 focus:ring-indigo-500/50 text-indigo-600 dark:text-indigo-400`} 
                                             />
                                         </td>
+                                        {/* 2. กลางภาค */}
                                         <td className="px-2 py-3 bg-orange-50/50 dark:bg-orange-900/5 text-center border-r border-orange-100/50 dark:border-slate-800">
                                             <input 
                                                 type="text"
@@ -290,14 +447,47 @@ const GradeBookTable: React.FC<GradeBookTableProps> = ({
                                                 className={`${scoreInputClass} border-orange-200 dark:border-orange-500/30 focus:ring-orange-500/50 text-orange-600 dark:text-orange-400`} 
                                             />
                                         </td>
-                                        <td className="px-2 py-3 bg-emerald-50/50 dark:bg-emerald-900/5 text-center border-r border-emerald-100/50 dark:border-slate-800">
+                                        {/* 3. หลังกลางภาค */}
+                                        <td className="px-2 py-3 bg-emerald-50/50 dark:bg-emerald-900/5 text-center border-r border-emerald-100/50 dark:border-slate-800 relative">
+                                            {detailedPostCount > 0 && (
+                                                <span 
+                                                    title={`มีคะแนนย่อยแล้ว (${detailedPostCount} ช่อง)`}
+                                                    className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500 shadow-sm"
+                                                />
+                                            )}
+                                            <input 
+                                                type="text"
+                                                inputMode="decimal"
+                                                value={record.postMidterm || 0} 
+                                                onFocus={async (e) => {
+                                                    e.currentTarget.select();
+                                                    if (!confirmedTerms['post-midterm'] && detailedPostCount > 0) {
+                                                        e.currentTarget.blur();
+                                                        const inputEl = e.currentTarget;
+                                                        const studentName = `${formatPrefix(student.title)}${student.firstName} ${student.lastName}`;
+                                                        const proceed = await handleConfirmOverwrite(student.id, 'post-midterm', studentName);
+                                                        if (proceed) {
+                                                            setTimeout(() => {
+                                                                inputEl.focus();
+                                                                inputEl.select();
+                                                            }, 50);
+                                                        }
+                                                    }
+                                                }}
+                                                onChange={(e) => handleScoreChange(student.id, 'postMidterm', e.target.value)} 
+                                                title={detailedPostCount > 0 ? `มีคะแนนย่อยแล้ว ${detailedPostCount} ช่อง (หากแก้ไขจะเกลี่ยทับ)` : "คะแนนเก็บหลังกลางภาค"}
+                                                className={`${scoreInputClass} border-emerald-200 dark:border-emerald-500/30 focus:ring-emerald-500/50 text-emerald-600 dark:text-emerald-400`} 
+                                            />
+                                        </td>
+                                        {/* 4. ปลายภาคเรียน */}
+                                        <td className="px-2 py-3 bg-rose-50/50 dark:bg-rose-900/5 text-center border-r border-rose-100/50 dark:border-slate-800">
                                             <input 
                                                 type="text"
                                                 inputMode="decimal"
                                                 value={record.final || 0} 
                                                 onFocus={(e) => e.currentTarget.select()}
                                                 onChange={(e) => handleScoreChange(student.id, 'final', e.target.value)} 
-                                                className={`${scoreInputClass} border-emerald-200 dark:border-emerald-500/30 focus:ring-emerald-500/50 text-emerald-600 dark:text-emerald-400`} 
+                                                className={`${scoreInputClass} border-rose-200 dark:border-rose-500/30 focus:ring-rose-500/50 text-rose-600 dark:text-rose-400`} 
                                             />
                                         </td>
                                         <td className="px-2 py-3 text-center border-r dark:border-slate-800">

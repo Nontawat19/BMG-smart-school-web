@@ -4,11 +4,14 @@ import { RootState } from "@/store";
 import { firestore } from "@/firebase";
 import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
 import { collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, where } from "firebase/firestore";
-import { School, Briefcase, Users, Search, Check, X, Clock, UsersRound, Plus } from "lucide-react";
-import { SCHOOL_CHAT_ROOM_ID, DEPARTMENT_CHATS, parentRoomId, studentDirectRoomId, studentHomeroomRoomId, getChatSchoolId, formatChatListTime } from "./chatConstants";
+import { School, Briefcase, Users, Search, Check, X, Clock, UsersRound, Plus, MessageSquare } from "lucide-react";
+import { SCHOOL_CHAT_ROOM_ID, DEPARTMENT_CHATS, parentRoomId, studentDirectRoomId, studentHomeroomRoomId, staffDirectRoomId, getChatSchoolId, formatChatListTime } from "./chatConstants";
 import { useChatWidget } from "./ChatWidgetContext";
 import GroupChatCreator from "./GroupChatCreator";
 import JoinDeptChatModal from "./JoinDeptChatModal";
+import StaffChatPickerModal from "./StaffChatPickerModal";
+import { isAttendanceOfficerAccount } from "./useChatMessages";
+import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 import { isStudyingStudent } from "@/utils/studentStatusUtils";
 
 interface ParentChild {
@@ -150,6 +153,9 @@ const ChatRoomList: React.FC<{ onSelectRoom: (roomId: string) => void }> = ({ on
   const [myGroups, setMyGroups] = useState<{ roomId: string; groupName: string }[]>([]);
   const [parentGroups, setParentGroups] = useState<{ roomId: string; groupName: string }[]>([]);
   const [showGroupCreator, setShowGroupCreator] = useState(false);
+  const [staffDirectRooms, setStaffDirectRooms] = useState<{ roomId: string; otherUid: string }[]>([]);
+  const [staffMap, setStaffMap] = useState<Record<string, { name: string; profileImageUrl?: string; position?: string; department?: string }>>({});
+  const [showStaffPicker, setShowStaffPicker] = useState(false);
 
   useEffect(() => {
     if (!schoolId) return;
@@ -246,10 +252,20 @@ const ChatRoomList: React.FC<{ onSelectRoom: (roomId: string) => void }> = ({ on
 
     const teachersRef = collection(firestore, "school-settings", schoolId, "teachers");
     getDocs(teachersRef).then((teacherSnap) => {
-      setAllTeachers(teacherSnap.docs.map((d) => {
-        const data = d.data();
-        return { id: d.id, name: `${data.title || ""}${data.firstName || ""} ${data.lastName || ""}`.trim() };
-      }));
+      setAllTeachers(
+        teacherSnap.docs
+          .filter((d) => {
+            const data = d.data();
+            if (isAttendanceOfficerAccount(data)) return false;
+            if (isAttendanceEntryOnly(data.role)) return false;
+            if (data.status && data.status !== "อยู่" && data.status !== "active") return false;
+            return true;
+          })
+          .map((d) => {
+            const data = d.data();
+            return { id: d.id, name: `${data.title || ""}${data.firstName || ""} ${data.lastName || ""}`.trim() };
+          })
+      );
     }).catch((error) => console.error("Error loading teacher list for student chat:", error));
 
     const roomsRef = collection(firestore, "school-settings", schoolId, "chatRooms");
@@ -267,6 +283,52 @@ const ChatRoomList: React.FC<{ onSelectRoom: (roomId: string) => void }> = ({ on
     );
     return () => unsub();
   }, [isStudentSession, schoolId, studentSession]);
+
+  // ครู/บุคลากร: โหลดข้อมูลครูและบุคลากรทั้งหมดในโรงเรียน (ยกเว้นเจ้าหน้าที่ลงเวลา) ไว้สำหรับจับคู่ห้องแชทและค้นหา
+  useEffect(() => {
+    if (isParentSession || isStudentSession || !schoolId) return;
+    const teachersRef = collection(firestore, "school-settings", schoolId, "teachers");
+    getDocs(teachersRef).then((snap) => {
+      const map: Record<string, { name: string; profileImageUrl?: string; position?: string; department?: string }> = {};
+      snap.docs.forEach((d) => {
+        const data = d.data();
+        if (isAttendanceOfficerAccount(data)) return;
+        if (isAttendanceEntryOnly(data.role)) return;
+        if (data.status && data.status !== "อยู่" && data.status !== "active") return;
+        const name = `${data.title || ""}${data.firstName || ""} ${data.lastName || ""}`.trim() || data.fullName || "ครู/บุคลากร";
+        map[d.id] = {
+          name,
+          profileImageUrl: data.profileImageUrl || data.profileUrl || "",
+          position: data.position || "",
+          department: data.department || "",
+        };
+      });
+      setStaffMap(map);
+    }).catch((e) => console.error("Error loading staff map:", e));
+  }, [isParentSession, isStudentSession, schoolId]);
+
+  // ครู/บุคลากร: ห้องแชท 1 ต่อ 1 ที่คุยกับเพื่อนร่วมงาน (staff-direct) — ฟังแบบเรียลไทม์
+  useEffect(() => {
+    if (isParentSession || isStudentSession || !schoolId || !currentUser?.uid) return;
+    const roomsRef = collection(firestore, "school-settings", schoolId, "chatRooms");
+    const unsub = onSnapshot(
+      query(roomsRef, where("type", "==", "staff-direct"), where("memberUids", "array-contains", currentUser.uid)),
+      (snap) => {
+        const rooms = snap.docs.map((d) => {
+          const data = d.data();
+          const members = (data.memberUids || []) as string[];
+          const otherUid = members.find((id) => id !== currentUser.uid) || "";
+          return {
+            roomId: d.id,
+            otherUid,
+          };
+        }).filter((r) => r.otherUid);
+        setStaffDirectRooms(rooms);
+      },
+      (error) => console.error("Error loading staff direct chats:", error)
+    );
+    return () => unsub();
+  }, [isParentSession, isStudentSession, schoolId, currentUser?.uid]);
 
   // ครู: กลุ่มแชทที่ตัวเองสร้าง (เช่น กลุ่มผู้ปกครองของห้องเรียน) — ฟังแบบเรียลไทม์เพื่อให้กลุ่มที่
   // เพิ่งสร้างขึ้นในดรอปดาวน์ทันที
@@ -417,12 +479,41 @@ const ChatRoomList: React.FC<{ onSelectRoom: (roomId: string) => void }> = ({ on
         subtitle: "กลุ่มแชทที่สร้างเอง",
         colorClass: "bg-amber-500",
       })),
+      ...staffDirectRooms.map((r) => {
+        const staff = staffMap[r.otherUid];
+        const name = staff?.name || "ครู/บุคลากร";
+        return {
+          roomId: r.roomId,
+          icon: <PersonAvatar name={name} photoUrl={staff?.profileImageUrl} />,
+          title: name,
+          subtitle: staff?.position || staff?.department || "แชทส่วนตัว",
+          colorClass: "bg-blue-600",
+        };
+      }),
     ];
-  }, [isParentSession, isStudentSession, parentSession, parentGroups, homeroomStudents, approvedStudentChats, myGroups, deptChatRoomIds, schoolLogoUrl, schoolChatTitle]);
+  }, [isParentSession, isStudentSession, parentSession, parentGroups, homeroomStudents, approvedStudentChats, myGroups, deptChatRoomIds, staffDirectRooms, staffMap, schoolLogoUrl, schoolChatTitle]);
 
   const filteredRooms = searchTerm.trim()
     ? allRooms.filter((r) => r.title.toLowerCase().includes(searchTerm.trim().toLowerCase()))
     : allRooms;
+
+  // ค้นหาครูและบุคลากรที่ยังไม่มีห้องแชทในรายการ เพื่อให้สามารถคลิกเริ่มแชทจากช่องค้นหาได้ทันที
+  const searchMatchedStaff = useMemo(() => {
+    if (isParentSession || isStudentSession || !searchTerm.trim() || !currentUser?.uid) return [];
+    const term = searchTerm.trim().toLowerCase();
+    const existingRoomOtherUids = new Set(staffDirectRooms.map((r) => r.otherUid));
+    return Object.entries(staffMap)
+      .filter(([id, staff]) => {
+        if (id === currentUser.uid) return false;
+        if (existingRoomOtherUids.has(id)) return false;
+        return (
+          staff.name.toLowerCase().includes(term) ||
+          (staff.position && staff.position.toLowerCase().includes(term)) ||
+          (staff.department && staff.department.toLowerCase().includes(term))
+        );
+      })
+      .map(([id, staff]) => ({ id, ...staff }));
+  }, [isParentSession, isStudentSession, searchTerm, staffMap, staffDirectRooms, currentUser?.uid]);
 
   // เรียงลำดับห้องแชท: ห้องที่มีแชทใหม่ที่ยังไม่อ่าน หรือมีข้อความเข้ามาล่าสุด จะขึ้นมาอยู่บนสุดเสมอ
   const sortedRooms = useMemo(() => {
@@ -458,15 +549,15 @@ const ChatRoomList: React.FC<{ onSelectRoom: (roomId: string) => void }> = ({ on
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder={isStudentSession ? "ค้นหาคุณครู" : "ค้นหาแชท"}
+            placeholder={isStudentSession ? "ค้นหาคุณครู" : "ค้นหาแชท หรือชื่อเพื่อนร่วมงาน"}
             className="w-full rounded-full bg-gray-100 py-2 pl-9 pr-3 text-sm outline-none dark:bg-white/5 dark:text-white"
           />
         </div>
         {!isParentSession && !isStudentSession && (
           <button
-            onClick={() => setShowGroupCreator(true)}
-            title="สร้างกลุ่มแชท"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white transition hover:bg-indigo-700"
+            onClick={() => setShowStaffPicker(true)}
+            title="แชทกับครูและบุคลากร / สร้างกลุ่ม"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white transition hover:bg-indigo-700 shadow-sm"
           >
             <Plus size={18} />
           </button>
@@ -572,7 +663,7 @@ const ChatRoomList: React.FC<{ onSelectRoom: (roomId: string) => void }> = ({ on
                 ))}
               </div>
             )}
-            {sortedRooms.length === 0 ? (
+            {sortedRooms.length === 0 && searchMatchedStaff.length === 0 ? (
               <p className="py-10 text-center text-sm text-gray-400">
                 {isParentSession ? "ไม่พบข้อมูลบุตรหลานในระบบ" : "ไม่พบห้องแชท"}
               </p>
@@ -592,6 +683,50 @@ const ChatRoomList: React.FC<{ onSelectRoom: (roomId: string) => void }> = ({ on
                 );
               })
             )}
+
+            {searchMatchedStaff.length > 0 && (
+              <div className="mt-2 border-t border-gray-100 pt-2 dark:border-gray-800">
+                <p className="px-2.5 py-1 text-xs font-bold uppercase tracking-wider text-gray-400">
+                  ครูและบุคลากร ({searchMatchedStaff.length})
+                </p>
+                {searchMatchedStaff.map((staff) => {
+                  const roomId = staffDirectRoomId(currentUser!.uid, staff.id);
+                  return (
+                    <button
+                      key={staff.id}
+                      onClick={() => onSelectRoom(roomId)}
+                      className="flex w-full items-center gap-3 rounded-xl p-2.5 text-left transition hover:bg-indigo-50/70 dark:hover:bg-white/5"
+                    >
+                      <div className="h-11 w-11 shrink-0 overflow-hidden rounded-full bg-indigo-500">
+                        <PersonAvatar name={staff.name} photoUrl={staff.profileImageUrl} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-bold text-gray-900 dark:text-white">{staff.name}</p>
+                        <p className="truncate text-xs text-gray-500 dark:text-gray-400">
+                          {staff.position || staff.department || "ครู/บุคลากร"}
+                        </p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400">
+                        เริ่มแชท
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {!isParentSession && !isStudentSession && (
+              <button
+                onClick={() => setShowStaffPicker(true)}
+                className="mt-1 flex w-full items-center gap-3 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/50 p-2.5 text-left text-sm font-bold text-indigo-700 transition hover:bg-indigo-100/70 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
+              >
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white shadow-sm">
+                  <MessageSquare size={18} />
+                </span>
+                แชทกับครูและบุคลากร
+              </button>
+            )}
+
             {!isParentSession && (
               <button
                 onClick={() => setShowJoinDeptChat(true)}
@@ -606,6 +741,22 @@ const ChatRoomList: React.FC<{ onSelectRoom: (roomId: string) => void }> = ({ on
           </>
         )}
       </div>
+
+      {showStaffPicker && schoolId && currentUser?.uid && (
+        <StaffChatPickerModal
+          schoolId={schoolId}
+          currentUid={currentUser.uid}
+          onClose={() => setShowStaffPicker(false)}
+          onSelectUser={(targetUid) => {
+            setShowStaffPicker(false);
+            onSelectRoom(staffDirectRoomId(currentUser.uid, targetUid));
+          }}
+          onOpenGroupCreator={() => {
+            setShowStaffPicker(false);
+            setShowGroupCreator(true);
+          }}
+        />
+      )}
 
       {showJoinDeptChat && schoolId && currentUser?.uid && (
         <JoinDeptChatModal

@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import { collection, doc, getDocs, setDoc, arrayUnion } from "firebase/firestore";
 import { firestore } from "@/firebase";
 import { X, Search, Plus, Check } from "lucide-react";
+import { isAttendanceOfficerAccount } from "./useChatMessages";
+import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 
 interface StaffOption {
   id: string;
@@ -40,14 +42,24 @@ const DeptChatMemberPicker: React.FC<Props> = ({ schoolId, roomId, roomLabel, on
   useEffect(() => {
     const teachersRef = collection(firestore, "school-settings", schoolId, "teachers");
     getDocs(teachersRef).then((snap) => {
-      setAllStaff(snap.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          name: `${data.title || ""}${data.firstName || ""} ${data.lastName || ""}`.trim(),
-          profileImageUrl: data.profileImageUrl || data.profileUrl || "",
-        };
-      }));
+      setAllStaff(
+        snap.docs
+          .filter((d) => {
+            const data = d.data();
+            if (isAttendanceOfficerAccount(data)) return false;
+            if (isAttendanceEntryOnly(data.role)) return false;
+            if (data.status && data.status !== "อยู่" && data.status !== "active") return false;
+            return true;
+          })
+          .map((d) => {
+            const data = d.data();
+            return {
+              id: d.id,
+              name: `${data.title || ""}${data.firstName || ""} ${data.lastName || ""}`.trim(),
+              profileImageUrl: data.profileImageUrl || data.profileUrl || "",
+            };
+          })
+      );
     }).catch((error) => console.error("Error loading staff for dept chat member picker:", error))
       .finally(() => setIsLoading(false));
   }, [schoolId]);
