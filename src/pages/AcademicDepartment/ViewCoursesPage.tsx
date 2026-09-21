@@ -1,3 +1,4 @@
+import { semestersOverlap } from "@/utils/semesterUtils";
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { firestore as db } from '../../firebase';
@@ -379,7 +380,8 @@ const ViewCoursesPage: React.FC = () => {
         course.teacherIds?.includes(selectedTeacherFilter) ||
         course.teacherAssignments?.some(a => a.teacherId === selectedTeacherFilter);
 
-      const matchesSemester = course.semester === selectedSemester || !course.semester; // Filter by semester
+      // วิชาตลอดปี (semester '0' / ว่าง / 1-2 ฯลฯ) แสดงในทุกภาคเรียน เหมือนหน้ามอบหมายรายวิชา
+      const matchesSemester = semestersOverlap(course.semester, selectedSemester);
 
       const matchesSubjectGroup = selectedSubjectGroupFilter === 'all' ||
         course.subjectGroup === selectedSubjectGroupFilter ||

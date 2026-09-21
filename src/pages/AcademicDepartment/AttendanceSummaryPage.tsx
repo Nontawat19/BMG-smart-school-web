@@ -652,7 +652,7 @@ const AttendanceSummaryPage: React.FC = () => {
 
     const courseOptions = useMemo(() => {
         const filtered = courses.filter(c => {
-            const isAnnual = !c.semester || c.semester === '1-2' || c.semester === 'annual' || c.semester === 'ปีการศึกษา';
+            const isAnnual = !c.semester || c.semester === '1-2' || c.semester === 'annual' || c.semester === '0' || c.semester === 'ปีการศึกษา';
             const matchesSemester = isAnnual || !semester || c.semester === semester;
             if (!matchesSemester) return false;
             if (userPrivileges.canSeeAll) return true;

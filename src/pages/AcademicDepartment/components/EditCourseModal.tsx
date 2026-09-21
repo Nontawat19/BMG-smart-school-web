@@ -404,7 +404,7 @@ export const EditCourseModal: React.FC<EditCourseModalProps> = ({
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">ภาคเรียน</label>
                                             <div className="flex gap-4">
-                                                {['1', '2'].map(term => (
+                                                {['1', '2', '0'].map(term => (
                                                     <label key={term} className={`
                           flex-1 relative flex items-center justify-center gap-2 p-3 rounded-xl border-2 cursor-pointer transition-all
                           ${formData.semester === term
@@ -419,7 +419,7 @@ export const EditCourseModal: React.FC<EditCourseModalProps> = ({
                                                             onChange={() => handleChange('semester', term)}
                                                         />
                                                         {formData.semester === term && <Check size={16} />}
-                                                        ภาคเรียนที่ {term}
+                                                        {term === '0' ? 'ตลอดปีการศึกษา' : `ภาคเรียนที่ ${term}`}
                                                     </label>
                                                 ))}
                                             </div>

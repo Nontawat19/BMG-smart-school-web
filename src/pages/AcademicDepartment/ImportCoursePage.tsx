@@ -1,3 +1,4 @@
+import { normalizeSemesterValue } from "@/utils/semesterUtils";
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import MainLayout from "@/layouts/MainLayout";
@@ -16,7 +17,9 @@ import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 
 // --- Configuration ---
-// ตามโครงสร้างจริงของ Excel: A=ชั้น, B=ห้อง/หมู่, C=รหัสวิชา, D=ชื่อวิชา, E=Code(English), F=Titles(English), G=หน่วยกิต, H=ประเภทวิชา, I=กลุ่มสาระ, J=จำนวนคาบ/สัปดาห์, K=คะแนนเก็บ, L=คะแนนกลางภาค, M=ภาคเรียน
+// ตามโครงสร้างจริงของ Excel: A=ชั้น, B=ห้อง/หมู่, C=รหัสวิชา, D=ชื่อวิชา, E=Code(English), F=Titles(English), G=หน่วยกิต, H=ประเภทวิชา, I=กลุ่มสาระ, J=จำนวนคาบ/สัปดาห์,
+// K..S=S1-S9 (คะแนนเก็บก่อนกลางภาค), T=กลางภาค, U..AC=S10-S18 (คะแนนเก็บหลังกลางภาค), AD=ปลายภาค, AE=ภาคเรียน
+// ส่วนคะแนน (S1-S18 / กลางภาค / ปลายภาค) ตรงกับหน้า "ตั้งค่าคะแนนเต็มรายวิชา" (/academic/score-configuration) — ไม่บังคับกรอก
 // ฟิลด์บังคับ: ชั้น, ชื่อวิชา, ประเภทวิชา, กลุ่มสาระ
 const REQUIRED_FIELDS = [
     { key: 'classId', label: 'ชั้น', required: true },
@@ -29,10 +32,43 @@ const REQUIRED_FIELDS = [
     { key: 'type', label: 'ประเภทวิชา', required: true },
     { key: 'subjectGroup', label: 'กลุ่มสาระ', required: true },
     { key: 'hoursPerWeek', label: 'จำนวนคาบ/สัปดาห์', required: false },
-    { key: 'formativeWeight', label: 'คะแนนเก็บ (%)', required: false },
-    { key: 'midtermWeight', label: 'คะแนนกลางภาค (%)', required: false },
     { key: 'semester', label: 'ภาคเรียน', required: true }, // Semester is now required from Excel
 ];
+
+// คอลัมน์คะแนนเต็ม — เรียงและตั้งชื่อเหมือนตารางในหน้า score-configuration (ทั้งหมดไม่บังคับ เว้นว่างได้)
+const PRE_MIDTERM_FIELDS = Array.from({ length: 9 }, (_, i) => ({ key: `s${i + 1}`, label: `S${i + 1}`, required: false }));
+const POST_MIDTERM_FIELDS = Array.from({ length: 9 }, (_, i) => ({ key: `s${i + 10}`, label: `S${i + 10}`, required: false }));
+const SCORE_FIELDS = [
+    ...PRE_MIDTERM_FIELDS,
+    { key: 'midtermWeight', label: 'กลางภาค', required: false },
+    ...POST_MIDTERM_FIELDS,
+    { key: 'finalWeight', label: 'ปลายภาค', required: false },
+];
+// แม่แบบเก่ามีช่อง "คะแนนเก็บ (%)" ช่องเดียว — ยังรับไฟล์เก่าได้ (แปลงเป็น S1) แต่ไม่อยู่ในแม่แบบใหม่แล้ว
+const LEGACY_FIELDS = [
+    { key: 'formativeWeight', label: 'คะแนนเก็บรวม (แม่แบบเก่า)', required: false },
+];
+const ALL_FIELDS = [...REQUIRED_FIELDS, ...SCORE_FIELDS, ...LEGACY_FIELDS];
+const SCORE_FIELD_KEYS = new Set(SCORE_FIELDS.map(f => f.key));
+
+interface AssessmentConfig {
+    id: string;
+    name: string;
+    maxScore: number;
+    term: 'pre-midterm' | 'post-midterm';
+}
+
+// อ่านค่าคะแนนจากเซลล์ Excel — ว่าง/ไม่ใช่ตัวเลข/ติดลบ = 0 (แปลว่าไม่ได้กำหนด)
+const parseScoreCell = (value: unknown): number => {
+    const n = Number(String(value ?? '').replace('%', '').trim());
+    return Number.isFinite(n) && n > 0 ? n : 0;
+};
+
+// หัวคอลัมน์ "S1".."S18" (รองรับ "s 1", "S01") — เทียบเป็นเลขเต็มเท่านั้น กัน S1 ไปชนกับ S10-S18
+const matchesScoreColumn = (header: string, n: number): boolean => {
+    const m = header.trim().match(/^s\s*[-_.]?\s*0?(\d{1,2})$/i);
+    return Boolean(m) && Number(m![1]) === n;
+};
 
 const CLASSES: Record<string, string> = {
     k1: 'อ.1', k2: 'อ.2', k3: 'อ.3',
@@ -87,8 +123,13 @@ interface MappedCourse {
     type: string;
     room?: string;
     hoursPerWeek: number;
-    formativeWeight: number;
+    formativeWeight: number; // ผลรวมคะแนนเก็บ S1-S18 (เก็บไว้ให้หน้าเก่าที่ยังอ่าน formativeWeight)
+    preMidtermTotal: number;
+    postMidtermTotal: number;
     midtermWeight: number;
+    finalWeight: number;
+    formativeAssessments: AssessmentConfig[];
+    hasScoreData: boolean; // false = ไฟล์ไม่ได้กรอกคะแนนเลย → ไม่เขียนคอนฟิกคะแนน ให้ครูไปตั้งที่หน้า score-configuration
     semester?: string; // Added semester field
     status: 'pending' | 'warning' | 'ready' | 'error';
     errorMessage?: string;
@@ -163,12 +204,24 @@ const ImportCoursePage: React.FC = () => {
 
     // --- File Handling ---
     const handleDownloadTemplate = (extension: 'xlsx' | 'xls') => {
-        const headers = REQUIRED_FIELDS.map(f => f.label + (f.required ? ' *' : ''));
+        // ลำดับคอลัมน์เหมือนหน้า score-configuration: S1-S9, กลางภาค, S10-S18, ปลายภาค (ภาคเรียนไว้ท้ายสุด)
+        const infoFields = REQUIRED_FIELDS.filter(f => f.key !== 'semester');
+        const semesterField = REQUIRED_FIELDS.find(f => f.key === 'semester')!;
+        const templateFields = [...infoFields, ...SCORE_FIELDS, semesterField];
+        const headers = templateFields.map(f => f.label + (f.required ? ' *' : ''));
 
-        // ข้อมูลตัวอย่าง
+        // ข้อมูลตัวอย่าง — คะแนนรวมกันได้ 100 เหมือนที่หน้า score-configuration ต้องการ
+        const buildRow = (info: string[], pre: number[], mid: number, post: number[], final: number, semester: string) => [
+            ...info,
+            ...Array.from({ length: 9 }, (_, i) => pre[i] ?? ''),
+            mid,
+            ...Array.from({ length: 9 }, (_, i) => post[i] ?? ''),
+            final,
+            semester,
+        ];
         const exampleData = [
-            ['ม.1', '1', 'ว21101', 'วิทยาศาสตร์ 1', 'SCI21101', 'Science 1', '1.5', 'พื้นฐาน', 'วิทยาศาสตร์และเทคโนโลยี', '3', '70', '30', '1'],
-            ['ม.4', '1', 'ค31101', 'คณิตศาสตร์ 1', 'MAT31101', 'Mathematics 1', '1.0', 'พื้นฐาน', 'คณิตศาสตร์', '2', '80', '20', '1'],
+            buildRow(['ม.1', '1', 'ว21101', 'วิทยาศาสตร์ 1', 'SCI21101', 'Science 1', '1.5', 'พื้นฐาน', 'วิทยาศาสตร์และเทคโนโลยี', '3'], [10, 10, 10], 20, [10, 10, 10], 20, '1'),
+            buildRow(['ม.4', '1', 'ค31101', 'คณิตศาสตร์ 1', 'MAT31101', 'Mathematics 1', '1.0', 'พื้นฐาน', 'คณิตศาสตร์', '2'], [15, 15], 20, [20], 30, '1'),
         ];
 
         const worksheetData = [headers, ...exampleData];
@@ -179,10 +232,24 @@ const ImportCoursePage: React.FC = () => {
         wscols[3] = { wch: 30 }; // ชื่อวิชา
         wscols[5] = { wch: 30 }; // Titles (English)
         wscols[8] = { wch: 25 }; // กลุ่มสาระ
+        for (let c = infoFields.length; c < headers.length - 1; c++) wscols[c] = { wch: 8 }; // คอลัมน์คะแนน
         ws['!cols'] = wscols;
+
+        const noteRows = [
+            ['คำอธิบายคอลัมน์คะแนน (ตรงกับหน้า "ตั้งค่าคะแนนเต็มรายวิชา")'],
+            ['S1 - S9', 'คะแนนเก็บก่อนกลางภาค — ใส่คะแนนเต็มของแต่ละครั้ง (เว้นว่างถ้าไม่มี)'],
+            ['กลางภาค', 'คะแนนเต็มสอบกลางภาค'],
+            ['S10 - S18', 'คะแนนเก็บหลังกลางภาค — ใส่คะแนนเต็มของแต่ละครั้ง (เว้นว่างถ้าไม่มี)'],
+            ['ปลายภาค', 'คะแนนเต็มสอบปลายภาค'],
+            ['หมายเหตุ', 'คอลัมน์คะแนนทั้งหมดไม่บังคับกรอก — เว้นว่างได้ แล้วไปตั้งค่าที่หน้า "ตั้งค่าคะแนนเต็มรายวิชา" ภายหลัง'],
+            ['หมายเหตุ', 'ถ้ากรอก คะแนนรวมทั้งหมด (S1-S18 + กลางภาค + ปลายภาค) ควรเท่ากับ 100'],
+        ];
+        const wsNote = XLSX.utils.aoa_to_sheet(noteRows);
+        wsNote['!cols'] = [{ wch: 14 }, { wch: 90 }];
 
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Template");
+        XLSX.utils.book_append_sheet(wb, wsNote, "คำอธิบายคะแนน");
 
         XLSX.writeFile(wb, `Course_Import_Template.${extension}`);
     };
@@ -251,7 +318,7 @@ const ImportCoursePage: React.FC = () => {
                 const newMapping: Record<string, string> = {};
                 let missingCount = 0;
 
-                REQUIRED_FIELDS.forEach(field => {
+                ALL_FIELDS.forEach(field => {
                     const match = headers.find(h => {
                         const hLower = h.toLowerCase().trim();
 
@@ -266,9 +333,12 @@ const ImportCoursePage: React.FC = () => {
                         if (field.key === 'type' && (h === 'ประเภทวิชา' || h === 'ประเภท' || hLower.includes('type'))) return true;
                         if (field.key === 'subjectGroup' && (h === 'กลุ่มสาระ' || h === 'กลุ่มสาระฯ' || h === 'กลุ่มสาระการเรียนรู้' || hLower.includes('group') || hLower.includes('dept'))) return true;
                         if (field.key === 'hoursPerWeek' && (h === 'จำนวนคาบ/สัปดาห์' || h === 'คาบ/สัปดาห์' || h === 'คาบ' || hLower.includes('hour') || hLower.includes('period'))) return true;
-                        if (field.key === 'formativeWeight' && (h === 'คะแนนเก็บ (%)' || h === 'คะแนนเก็บ' || hLower.includes('formative'))) return true;
-                        if (field.key === 'midtermWeight' && (h === 'คะแนนกลางภาค (%)' || h === 'กลางภาค' || hLower.includes('midterm'))) return true;
-                        if (field.key === 'semester' && (h === 'ภาคเรียน' || h === 'ภาคเรียนที่' || h === 'เทอม' || hLower.includes('semester') || hLower.includes('term'))) return true; 
+                        // คะแนนเก็บรวมช่องเดียว (แม่แบบเก่า) — ไม่ให้ชนกับ S1-S18
+                        if (field.key === 'formativeWeight' && (h === 'คะแนนเก็บ (%)' || h === 'คะแนนเก็บ' || h === 'คะแนนเก็บรวม (แม่แบบเก่า)' || hLower.includes('formative'))) return true;
+                        if (field.key === 'midtermWeight' && (h === 'กลางภาค' || h === 'คะแนนกลางภาค' || h === 'คะแนนกลางภาค (%)' || hLower.includes('midterm'))) return true;
+                        if (field.key === 'finalWeight' && (h === 'ปลายภาค' || h === 'คะแนนปลายภาค' || h === 'คะแนนปลายภาค (%)' || hLower.includes('final'))) return true;
+                        if (SCORE_FIELD_KEYS.has(field.key) && /^s\d+$/.test(field.key) && matchesScoreColumn(h, Number(field.key.slice(1)))) return true;
+                        if (field.key === 'semester' && (h === 'ภาคเรียน' || h === 'ภาคเรียนที่' || h === 'เทอม' || hLower.includes('semester') || (hLower.includes('term') && !hLower.includes('midterm')))) return true; 
 
                         return false;
                     });
@@ -352,14 +422,36 @@ const ImportCoursePage: React.FC = () => {
 
                 // Skip teacher warning as requested
 
-                // Check score weights
-                const formative = Number(rowData.formativeWeight) || 0;
-                const midterm = Number(rowData.midtermWeight) || 0;
-                const final = 100 - formative - midterm;
+                // คะแนนเต็ม — โครงสร้างเดียวกับหน้า score-configuration (S1-S9 / กลางภาค / S10-S18 / ปลายภาค)
+                const preScores = Array.from({ length: 9 }, (_, i) => parseScoreCell(rowData[`s${i + 1}`]));
+                const postScores = Array.from({ length: 9 }, (_, i) => parseScoreCell(rowData[`s${i + 10}`]));
+                const midterm = parseScoreCell(rowData.midtermWeight);
+                let finalScore = parseScoreCell(rowData.finalWeight);
+                const legacyFormative = parseScoreCell(rowData.formativeWeight);
 
-                if (formative + midterm + final !== 100) {
-                    status = 'warning'; // Relax to warning
-                    errorMessage = 'สัดส่วนคะแนนไม่รวมเป็น 100%';
+                // ไฟล์แม่แบบเก่า: มี "คะแนนเก็บ (%)" ช่องเดียว ไม่มี S1-S18 → ใส่เป็น S1 และปลายภาค = ส่วนที่เหลือ (เหมือนสูตรเดิม)
+                const hasDetailedScores = preScores.some(v => v > 0) || postScores.some(v => v > 0);
+                if (!hasDetailedScores && legacyFormative > 0) {
+                    preScores[0] = legacyFormative;
+                    if (!String(rowData.finalWeight ?? '').trim()) {
+                        finalScore = Math.max(0, 100 - legacyFormative - midterm);
+                    }
+                }
+
+                const formativeAssessments: AssessmentConfig[] = [
+                    ...preScores.map((maxScore, i) => ({ id: `S${i + 1}`, name: `S${i + 1}`, maxScore, term: 'pre-midterm' as const })),
+                    ...postScores.map((maxScore, i) => ({ id: `S${i + 10}`, name: `S${i + 10}`, maxScore, term: 'post-midterm' as const })),
+                ].filter(a => a.maxScore > 0);
+                const preMidtermTotal = preScores.reduce((a, b) => a + b, 0);
+                const postMidtermTotal = postScores.reduce((a, b) => a + b, 0);
+                const hasScoreData = formativeAssessments.length > 0 || midterm > 0 || finalScore > 0;
+                const totalScore = Math.round((preMidtermTotal + postMidtermTotal + midterm + finalScore) * 100) / 100;
+
+                // เหมือนหน้า score-configuration: รวมไม่ครบ 100 ยังนำเข้าได้ แต่เตือนให้ตรวจ
+                if (hasScoreData && totalScore !== 100) {
+                    if (status === 'ready') status = 'warning';
+                    const scoreMessage = `คะแนนรวม ${totalScore} (ควรเป็น 100)`;
+                    errorMessage = errorMessage ? `${errorMessage} / ${scoreMessage}` : scoreMessage;
                 }
 
                 return {
@@ -373,9 +465,15 @@ const ImportCoursePage: React.FC = () => {
                     type: rowData.type || "ไม่ระบุ", // Default if missing
                     room: rowData.room || "",
                     hoursPerWeek: rowData.credits ? Math.round(Number(rowData.credits) * 2) : (Number(rowData.hoursPerWeek) || 1),
-                    formativeWeight: formative,
+                    formativeWeight: preMidtermTotal + postMidtermTotal,
+                    preMidtermTotal,
+                    postMidtermTotal,
                     midtermWeight: midterm,
-                    semester: rowData.semester ? String(rowData.semester) : undefined, // Read semester from row
+                    finalWeight: finalScore,
+                    formativeAssessments,
+                    hasScoreData,
+                    // ภาคเรียนจากแถว — คำว่าตลอดปี/ปีการศึกษา/1-2/annual/0 แปลงเป็น '0' (วิชาตลอดปี แสดงในทุกภาคเรียน) เหมือนหน้ามอบหมายรายวิชา
+                    semester: rowData.semester ? (normalizeSemesterValue(rowData.semester) === '0' ? '0' : String(rowData.semester)) : undefined,
                     status,
                     errorMessage
                 };
@@ -530,6 +628,12 @@ const ImportCoursePage: React.FC = () => {
                     type: course.type,
                     formativeWeight: course.formativeWeight,
                     midtermWeight: course.midtermWeight,
+                    // คอนฟิกคะแนนแบบเดียวกับที่หน้า score-configuration บันทึก — เขียนเมื่อไฟล์กรอกคะแนนมาเท่านั้น
+                    // (ไม่กรอก = ปล่อยว่างให้ครูไปตั้งภายหลัง เหมือนพฤติกรรมเดิม)
+                    ...(course.hasScoreData ? {
+                        formativeAssessments: course.formativeAssessments,
+                        finalWeight: course.finalWeight,
+                    } : {}),
                     classId: [course.classId],
                     hoursPerWeek: course.hoursPerWeek,
                     credits: String(course.credits || ''),
@@ -698,7 +802,7 @@ const ImportCoursePage: React.FC = () => {
                                                 onClick={openManualMapping}
                                                 className="flex items-center gap-2 px-4 py-2 text-sm bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 rounded-xl hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors font-medium border border-indigo-100 dark:border-indigo-500/20"
                                             >
-                                                <FaEdit /> แกัไขจับคู่คอลัมน์ ({Object.keys(columnMapping).length}/{REQUIRED_FIELDS.length})
+                                                <FaEdit /> แกัไขจับคู่คอลัมน์ ({Object.keys(columnMapping).length}/{ALL_FIELDS.length})
                                             </button>
                                         </div>
                                     )}
@@ -739,6 +843,16 @@ const ImportCoursePage: React.FC = () => {
                                             </div>
                                         );
                                     })}
+                                    {(() => {
+                                        const mappedScoreCount = SCORE_FIELDS.filter(f => columnMapping[f.key]).length;
+                                        const hasLegacy = Boolean(columnMapping.formativeWeight);
+                                        const found = mappedScoreCount > 0 || hasLegacy;
+                                        return (
+                                            <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded ${found ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}>
+                                                {found ? '✓' : '○'} คะแนนเต็ม (S1-S18 / กลางภาค / ปลายภาค) พบ {mappedScoreCount}/{SCORE_FIELDS.length} คอลัมน์{hasLegacy ? ' + คะแนนเก็บรวมแบบเก่า' : ''} — ไม่บังคับ
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
                             )}
 
@@ -795,7 +909,7 @@ const ImportCoursePage: React.FC = () => {
                                                                     className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-[#2a2b2f] text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-colors"
                                                                 >
                                                                     <option value="">-- ไม่ใช้งานคอลัมน์นี้ --</option>
-                                                                    {REQUIRED_FIELDS.map(field => (
+                                                                    {ALL_FIELDS.map(field => (
                                                                         <option key={field.key} value={field.key}>
                                                                             {field.label} {field.required && '*'}
                                                                         </option>
@@ -906,6 +1020,7 @@ const ImportCoursePage: React.FC = () => {
                                                 <th className="px-5 py-3.5 text-center">หน่วยกิต</th>
                                                 <th className="px-5 py-3.5 text-center">คาบ/สัปดาห์</th>
                                                 <th className="px-5 py-3.5 min-w-[150px]">สาระ/ประเภท</th>
+                                                <th className="px-5 py-3.5 text-center" title="ก่อนกลางภาค + กลางภาค + หลังกลางภาค + ปลายภาค">คะแนนเต็ม</th>
                                                 <th className="px-5 py-3.5 text-center">สถานะ</th>
                                             </tr>
                                         </thead>
@@ -936,7 +1051,7 @@ const ImportCoursePage: React.FC = () => {
                                                     </td>
                                                     <td className="px-5 py-4 text-center">
                                                         <span className="w-6 h-6 inline-flex items-center justify-center rounded bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-bold text-xs ring-1 ring-blue-100 dark:ring-blue-800/30">
-                                                            {course.semester || "-"}
+                                                            {course.semester === '0' ? 'ปี' : (course.semester || "-")}
                                                         </span>
                                                     </td>
                                                     <td className="px-5 py-4 text-center">
@@ -953,7 +1068,21 @@ const ImportCoursePage: React.FC = () => {
                                                         <div className="font-medium text-slate-700 dark:text-slate-200 text-xs mb-0.5">{course.type}</div>
                                                         <div className="text-[11px] text-slate-500 truncate max-w-[150px]" title={course.subjectGroup}>{course.subjectGroup}</div>
                                                     </td>
-                                                    <td className="px-5 py-4 text-center">
+                                                    <td className="px-5 py-4 text-center text-xs">
+                                                        {course.hasScoreData ? (
+                                                            <div title="ก่อนกลางภาค + กลางภาค + หลังกลางภาค + ปลายภาค">
+                                                                <span className="font-medium text-slate-700 dark:text-slate-200">
+                                                                    {course.preMidtermTotal} + {course.midtermWeight} + {course.postMidtermTotal} + {course.finalWeight}
+                                                                </span>
+                                                                <div className={`font-bold ${course.preMidtermTotal + course.midtermWeight + course.postMidtermTotal + course.finalWeight === 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                                                                    = {Math.round((course.preMidtermTotal + course.midtermWeight + course.postMidtermTotal + course.finalWeight) * 100) / 100}
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-slate-400" title="ไม่ได้กรอกคะแนน — ไปตั้งค่าที่หน้าตั้งค่าคะแนนเต็มรายวิชาภายหลัง">—</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-5 py-4 text-center" title={course.errorMessage || undefined}>
                                                         {getStatusBadge(course.status)}
                                                     </td>
                                                 </tr>

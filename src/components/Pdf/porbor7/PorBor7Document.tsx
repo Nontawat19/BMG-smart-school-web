@@ -24,16 +24,20 @@ const styles = StyleSheet.create({
         lineHeight: 1.12,
         color: '#000',
     },
+    // ตราครุฑตามระเบียบงานสารบรรณ (แบบหนังสือรับรอง): ตัวครุฑสูง 3 ซม. (85 pt) วางกึ่งกลางหน้ากระดาษ
+    // ห่างจากขอบบนประมาณ 2.5 ซม. (71 pt) — ไฟล์ garuda_official.jpg (648x720 px) มีขอบว่างในภาพ
+    // (บน 20px/ล่าง 11px จาก 720px) จึงขยายกรอบภาพเป็นสูง 89 pt และขยับกรอบขึ้นมาให้ตัวครุฑจริงเริ่มที่ ~71 pt
+    // ตัวครุฑจริงจึงจบที่ ~156 pt เท่าเดิม (ตำแหน่งข้อความด้านล่างไม่ต้องขยับ)
     krutContainer: {
         position: 'absolute',
-        top: 88,
+        top: 68.4,
         left: 0,
         width: '100%',
         alignItems: 'center',
     },
     krut: {
-        width: 61,
-        height: 70,
+        width: 80,
+        height: 89,
         objectFit: 'contain',
     },
     title: {

@@ -22,7 +22,6 @@ import BackButton from "@/components/Shared/BackButton";
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import { getClassKeysByRange, CLASS_FULL_NAMES } from "@/utils/schoolUtils";
 import { useSubjectGroups } from "@/hooks/useSubjectGroups";
-import { getActiveSortedTeachers } from "@/utils/teacherSortUtils";
 
 interface Teacher {
   id: string;
@@ -118,8 +117,12 @@ const CourseManagementPage: React.FC = () => {
   const [courseCode, setCourseCode] = useState("");
   const [subjectGroup, setSubjectGroup] = useState("");
   const [courseType, setCourseType] = useState("พื้นฐาน");
-  const [formativeWeight, setFormativeWeight] = useState(0); // New state for formative score weight
-  const [midtermWeight, setMidtermWeight] = useState(0);   // New state for midterm score weight
+  // คะแนนเต็ม — โครงสร้างเดียวกับหน้า "ตั้งค่าคะแนนเต็มรายวิชา" (score-configuration): S1-S9 / กลางภาค / S10-S18 / ปลายภาค
+  // เก็บเป็น string เพื่อให้เว้นว่างได้ (ไม่บังคับกรอก)
+  const [preScores, setPreScores] = useState<string[]>(Array(9).fill(''));
+  const [postScores, setPostScores] = useState<string[]>(Array(9).fill(''));
+  const [midtermScore, setMidtermScore] = useState('');
+  const [finalScore, setFinalScore] = useState('');
   const [indicators, setIndicators] = useState("");
   const [expectedOutcomes, setExpectedOutcomes] = useState("");
   const [targetClasses, setTargetClasses] = useState<string[]>([]);
@@ -137,9 +140,7 @@ const CourseManagementPage: React.FC = () => {
   const [codeEn, setCodeEn] = useState("");
   const [titleEn, setTitleEn] = useState("");
   const [room, setRoom] = useState("");
-  const [teacherId, setTeacherId] = useState("");
   const [isCombined, setIsCombined] = useState(false); // เพิ่ม state สำหรับเรียนรวม
-  const [isElective, setIsElective] = useState(false); // เพิ่ม state สำหรับวิชาเลือกเสรี
 
 
   const currentUser = useSelector((state: RootState) => state.auth.user);
@@ -212,15 +213,6 @@ const CourseManagementPage: React.FC = () => {
     { value: 'เพิ่มเติม', label: 'วิชาเพิ่มเติม' },
     { value: 'ชุมนุม', label: 'ชุมนุม' }
   ];
-  const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
-  const teachers = useMemo(() => getActiveSortedTeachers(Object.values(teacherMap || {})), [teacherMap]);
-  const teacherOptions = useMemo(() => {
-    const list = [{ value: '', label: '-- ไม่ระบุ (Pending) --' }];
-    if (teachers) {
-      list.push(...teachers.map(t => ({ value: t.id, label: `${t.teacherId ? `${t.teacherId} ` : ''}${t.name}` })));
-    }
-    return list;
-  }, [teachers]);
   const dispatch = useDispatch();
 
   // ✅ ดึงข้อมูล schoolSettings และ periodSettings จาก Redux (fetch ครั้งเดียวตอน login)
@@ -292,6 +284,37 @@ const CourseManagementPage: React.FC = () => {
 
 
 
+  // แยกช่อง "ห้อง / หมู่เรียน" เป็นอาเรย์: "1, 2" -> ['1','2'] (เดิมเก็บเป็นข้อความเดียว "1, 2" ทำให้เทียบห้องไม่ตรง)
+  // ว่าง หรือมี 'all' -> ['all'] (เรียนทุกห้อง)
+  const parsedRooms = (() => {
+    const list = Array.from(new Set(
+      room.split(/[,،;\n\/\s]+/)
+        .map(r => r.trim().replace(/^ห้อง/, '').trim())
+        .filter(Boolean)
+    ));
+    if (list.length === 0 || list.some(r => r.toLowerCase() === 'all')) return ['all'];
+    return list;
+  })();
+
+  // ค่าคะแนนเต็มที่คำนวณจากช่องกรอก (ว่าง/ไม่ใช่ตัวเลข/ติดลบ = 0 = ไม่ได้กำหนด)
+  const toScore = (value: string) => {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+  const preTotal = preScores.reduce((sum, v) => sum + toScore(v), 0);
+  const postTotal = postScores.reduce((sum, v) => sum + toScore(v), 0);
+  const midtermNumber = toScore(midtermScore);
+  const finalNumber = toScore(finalScore);
+  const scoreTotal = Math.round((preTotal + midtermNumber + postTotal + finalNumber) * 100) / 100;
+  const hasScoreData = scoreTotal > 0;
+  // คะแนนทุกช่องยกเว้นปลายภาค — ใช้คำนวณปุ่ม "เติมปลายภาค" ให้รวมครบ 100
+  const restTotal = preTotal + midtermNumber + postTotal;
+  // รูปแบบเดียวกับที่หน้า score-configuration บันทึก (S1-S9 = pre-midterm, S10-S18 = post-midterm)
+  const formativeAssessments = [
+    ...preScores.map((v, i) => ({ id: `S${i + 1}`, name: `S${i + 1}`, maxScore: toScore(v), term: 'pre-midterm' as const })),
+    ...postScores.map((v, i) => ({ id: `S${i + 10}`, name: `S${i + 10}`, maxScore: toScore(v), term: 'post-midterm' as const })),
+  ].filter(a => a.maxScore > 0);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
@@ -319,15 +342,18 @@ const CourseManagementPage: React.FC = () => {
       return;
     }
 
-    const finalWeight = 100 - formativeWeight - midtermWeight;
-    if (formativeWeight + midtermWeight + finalWeight !== 100) {
-      Swal.fire({
+    // คะแนนเต็มไม่บังคับกรอก (เหมือนหน้า score-configuration) — ถ้ากรอกแล้วรวมไม่ครบ 100 ให้ถามยืนยันก่อน
+    if (hasScoreData && scoreTotal !== 100) {
+      const confirm = await Swal.fire({
         icon: 'warning',
-        title: 'สัดส่วนคะแนนไม่ถูกต้อง',
-        text: 'คะแนนเก็บ + กลางภาค + ปลายภาค ต้องรวมกันได้ 100%',
+        title: `คะแนนรวม ${scoreTotal} ไม่ครบ 100`,
+        text: 'ต้องการบันทึกต่อหรือไม่? (แก้ไขภายหลังได้ที่หน้าตั้งค่าคะแนนเต็มรายวิชา)',
+        showCancelButton: true,
+        confirmButtonText: 'บันทึกต่อ',
+        cancelButtonText: 'กลับไปแก้ไข',
         background: '#2a2b2f', color: '#ffffff'
       });
-      return;
+      if (!confirm.isConfirmed) return;
     }
     setIsSubmitting(true);
 
@@ -358,8 +384,11 @@ const CourseManagementPage: React.FC = () => {
         code: courseCode,
         subjectGroup: subjectGroup,
         type: courseType,
-        formativeWeight,
-        midtermWeight,
+        // สรุปคะแนนเก็บรวม/กลางภาค (หน้าเก่ายังอ่านสองค่านี้) — ตัวรายละเอียดอยู่ใน formativeAssessments
+        formativeWeight: preTotal + postTotal,
+        midtermWeight: midtermNumber,
+        // เขียนคอนฟิกคะแนนเมื่อกรอกมาเท่านั้น (ไม่กรอก = ให้ไปตั้งที่หน้า score-configuration ภายหลัง)
+        ...(hasScoreData ? { formativeAssessments, finalWeight: finalNumber } : {}),
         classId: targetClasses,
         hoursPerWeek: Number(hoursPerWeek),
         constraints: {
@@ -367,16 +396,18 @@ const CourseManagementPage: React.FC = () => {
           lockedSlots: lockedSlots,
         },
         indicators: courseType === "พื้นฐาน" ? indicators.split('\n').map(line => line.trim()).filter(line => line) : [],
-        expectedOutcomes: courseType === "เพิ่มเติม" ? expectedOutcomes.split('\n').map(line => line.trim()).filter(line => line) : [],
+        // วิชาที่ไม่ใช่ "พื้นฐาน" (เพิ่มเติม/ชุมนุม) ใช้ช่องผลการเรียนรู้ — เดิมเก็บเฉพาะ "เพิ่มเติม" ทำให้ของชุมนุมหายเงียบ ๆ
+        expectedOutcomes: courseType !== "พื้นฐาน" ? expectedOutcomes.split('\n').map(line => line.trim()).filter(line => line) : [],
         semester: semester, // เพิ่มฟิลด์ภาคเรียน
         isCombined: isCombined, // เรียนรวม
-        isElective: isElective, // เพิ่มสถานะวิชาเลือกเสรี
+        isElective: courseType === 'เพิ่มเติม', // กำหนดจากประเภทวิชา เหมือนหน้านำเข้า Excel
         // New fields aligned with ImportCoursePage
         titleEn: titleEn,
         codeEn: codeEn,
-        room: room ? [room] : ['all'], // Store as array to match import structure
-        teacherId: teacherId || 'pending',
-        teacherIds: [teacherId || 'pending'], // Added teacherIds array for alignment
+        room: parsedRooms, // อาเรย์ของห้อง (หลายห้องคั่นด้วย , ได้) หรือ ['all'] — ตรงกับโครงสร้างหน้านำเข้า Excel
+        // ครูผู้สอนตั้งเป็น pending รอมอบหมายที่หน้ามอบหมายครู (เหมือนหน้านำเข้า Excel)
+        teacherId: 'pending',
+        teacherIds: ['pending'],
         credits: String(credits), // Store as string if that matches import, or number? Import interface says string? checking... MappedCourse allows string. Let's keep it consistent.
         createdAt: new Date(),
       };
@@ -396,8 +427,10 @@ const CourseManagementPage: React.FC = () => {
       setCourseCode("");
       setSubjectGroup("");
       setCourseType("พื้นฐาน");
-      setFormativeWeight(0);
-      setMidtermWeight(0);
+      setPreScores(Array(9).fill(''));
+      setPostScores(Array(9).fill(''));
+      setMidtermScore('');
+      setFinalScore('');
       setIndicators("");
       setExpectedOutcomes("");
       setTargetClasses([]);
@@ -405,14 +438,12 @@ const CourseManagementPage: React.FC = () => {
       setCodeEn("");
       setTitleEn("");
       setRoom("");
-      setTeacherId("");
 
       setTargetRooms([]);
       setHoursPerWeek(1);
       setDisallowedDays([]);
       setLockedSlots([]);
       setIsCombined(false);
-      setIsElective(false);
 
     } catch (error) {
       console.error("Error adding document: ", error);
@@ -531,7 +562,11 @@ const CourseManagementPage: React.FC = () => {
                         >
                           <option value="1">ภาคเรียนที่ 1</option>
                           <option value="2">ภาคเรียนที่ 2</option>
+                          <option value="0">ตลอดปีการศึกษา (ทั้ง 2 ภาคเรียน)</option>
                         </select>
+                        {semester === '0' && (
+                          <p className="mt-1.5 text-[11px] text-gray-400">วิชานี้จะแสดงในทุกภาคเรียน (เช่น วิชาที่สอนทั้งปีของชั้นประถม) — หน้ามอบหมายรายวิชาจะเห็นในภาคเรียนที่ 1 และ 2</p>
+                        )}
                       </div>
 
                       {/* ห้อง/หมู่เรียน */}
@@ -543,64 +578,147 @@ const CourseManagementPage: React.FC = () => {
                           value={room}
                           onChange={(e) => setRoom(e.target.value)}
                           className="w-full bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                          placeholder="เช่น 1, 2, A, B (ใส่ 'all' หากเรียนทุกห้อง)"
+                          placeholder="เช่น 1 หรือ 1, 2, A (เว้นว่างหรือใส่ 'all' = ทุกห้อง)"
                         />
                       </div>
                     </div>
 
-                    {/* ครูผู้สอน */}
-                    <div>
-                      <label htmlFor="teacherId" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">👨‍🏫 ครูผู้สอน</label>
-                      <Select
-                        id="teacherId"
-                        value={teacherOptions.find(opt => opt.value === teacherId)}
-                        onChange={(opt: any) => setTeacherId(opt?.value || '')}
-                        options={teacherOptions}
-                        styles={premiumStyles}
-                        placeholder="ค้นหาชื่อครู..."
-                        isSearchable
-                        isClearable
-                      />
-                    </div>
+                    {/* คะแนนเต็มรายวิชา — ไม่บังคับกรอก, เรียงเหมือนหน้า score-configuration */}
+                    <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-[#1e1f21]/60 p-4 space-y-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-bold text-gray-800 dark:text-gray-200">คะแนนเต็มรายวิชา <span className="ml-1 rounded-full bg-gray-200 dark:bg-gray-700 px-2 py-0.5 text-[10px] font-semibold text-gray-500 dark:text-gray-300 align-middle">ไม่บังคับ</span></p>
+                          <p className="text-[11px] text-gray-400 mt-0.5">ใส่คะแนนเต็มของแต่ละครั้ง ช่องที่ไม่ใช้เว้นว่างได้ — ตั้งภายหลังที่หน้า "ตั้งค่าคะแนนเต็มรายวิชา" ก็ได้</p>
+                        </div>
+                        {hasScoreData && (
+                          <div className="flex gap-1.5">
+                            {restTotal < 100 && finalNumber !== 100 - restTotal && (
+                              <button
+                                type="button"
+                                onClick={() => setFinalScore(String(Math.round((100 - restTotal) * 100) / 100))}
+                                className="rounded-lg bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 px-2.5 py-1 text-[11px] font-bold text-rose-600 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-colors"
+                                title="ตั้งคะแนนปลายภาคให้รวมทั้งหมดได้ 100 พอดี"
+                              >
+                                เติมปลายภาค = {Math.round((100 - restTotal) * 100) / 100}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPreScores(Array(9).fill(''));
+                                setPostScores(Array(9).fill(''));
+                                setMidtermScore('');
+                                setFinalScore('');
+                              }}
+                              className="rounded-lg border border-gray-200 dark:border-gray-600 px-2.5 py-1 text-[11px] font-semibold text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                            >
+                              ล้างทั้งหมด
+                            </button>
+                          </div>
+                        )}
+                      </div>
 
-                    <div className="space-y-4">
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">สัดส่วนคะแนนรวม 100%</label>
-                      <div className="grid grid-cols-3 gap-4">
-                        <div>
-                          <label htmlFor="formativeWeight" className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">คะแนนเก็บ (%)</label>
-                          <input
-                            type="number"
-                            id="formativeWeight"
-                            value={formativeWeight}
-                            onChange={(e) => setFormativeWeight(Number(e.target.value))}
-                            min="0"
-                            max="100"
-                            className="w-full bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                          />
+                      {/* แถบสรุป: รวมกี่คะแนน จาก 100 */}
+                      <div>
+                        <div className="flex items-baseline justify-between mb-1.5">
+                          <span className="text-[11px] text-gray-500 dark:text-gray-400">คะแนนรวมทั้งหมด</span>
+                          <span className={`text-sm font-black ${!hasScoreData ? 'text-gray-400' : scoreTotal === 100 ? 'text-emerald-600 dark:text-emerald-400' : scoreTotal > 100 ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                            {scoreTotal} / 100
+                            <span className="ml-2 text-[11px] font-semibold">
+                              {!hasScoreData ? '' : scoreTotal === 100 ? '✓ ครบ 100' : scoreTotal > 100 ? `เกิน ${Math.round((scoreTotal - 100) * 100) / 100}` : `เหลืออีก ${Math.round((100 - scoreTotal) * 100) / 100}`}
+                            </span>
+                          </span>
                         </div>
-                        <div>
-                          <label htmlFor="midtermWeight" className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">กลางภาค (%)</label>
-                          <input
-                            type="number"
-                            id="midtermWeight"
-                            value={midtermWeight}
-                            onChange={(e) => setMidtermWeight(Number(e.target.value))}
-                            min="0"
-                            max="100"
-                            className="w-full bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                          />
-                        </div>
-                        <div>
-                          <label htmlFor="finalWeight" className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">ปลายภาค (%)</label>
-                          <input
-                            type="number"
-                            id="finalWeight"
-                            value={100 - formativeWeight - midtermWeight}
-                            readOnly
-                            className="w-full bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                          <div
+                            className={`h-full rounded-full transition-all duration-300 ${scoreTotal === 100 ? 'bg-emerald-500' : scoreTotal > 100 ? 'bg-rose-500' : 'bg-indigo-500'}`}
+                            style={{ width: `${Math.min(100, scoreTotal)}%` }}
                           />
                         </div>
                       </div>
+
+                      {(() => {
+                        // ช่องตัวเลข: ไม่มีลูกศรหมุน, คลิกแล้วเลือกทั้งช่อง, เลื่อนเมาส์ไม่เปลี่ยนค่า, ช่องที่กรอกแล้วเน้นสี
+                        const numberClass = (filled: boolean, tint: string) =>
+                          `w-full rounded-lg border text-center text-sm outline-none transition-colors focus:ring-2 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none placeholder:text-gray-300 dark:placeholder:text-gray-600 ${filled
+                            ? `${tint} font-bold text-gray-900 dark:text-white`
+                            : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-[#2a2b2f] text-gray-700 dark:text-gray-200'}`;
+                        const inputProps = {
+                          type: 'number' as const,
+                          inputMode: 'decimal' as const,
+                          min: 0,
+                          placeholder: '0',
+                          onFocus: (e: React.FocusEvent<HTMLInputElement>) => e.target.select(),
+                          onWheel: (e: React.WheelEvent<HTMLInputElement>) => e.currentTarget.blur(),
+                        };
+
+                        const renderGroup = (
+                          title: string,
+                          total: number,
+                          accent: { text: string; badge: string; filled: string },
+                          values: string[],
+                          setValues: React.Dispatch<React.SetStateAction<string[]>>,
+                          startNo: number
+                        ) => (
+                          <div>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <p className={`text-xs font-bold ${accent.text}`}>{title}</p>
+                              <span className={`rounded-full px-2 py-0.5 text-[11px] font-black ${accent.badge}`}>รวม {total}</span>
+                            </div>
+                            <div className="grid grid-cols-5 sm:grid-cols-9 gap-1.5">
+                              {values.map((value, i) => (
+                                <label key={startNo + i} htmlFor={`score-s${startNo + i}`} className="block">
+                                  <span className="block text-[10px] text-center text-gray-400 mb-0.5">S{startNo + i}</span>
+                                  <input
+                                    {...inputProps}
+                                    id={`score-s${startNo + i}`}
+                                    value={value}
+                                    onChange={(e) => setValues(prev => prev.map((v, idx) => (idx === i ? e.target.value : v)))}
+                                    className={`${numberClass(toScore(value) > 0, accent.filled)} h-10`}
+                                  />
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        );
+
+                        const renderSingle = (
+                          id: string,
+                          title: string,
+                          value: string,
+                          setValue: (v: string) => void,
+                          accent: { text: string; bar: string; filled: string }
+                        ) => (
+                          <label htmlFor={id} className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 ${accent.bar}`}>
+                            <span className={`text-sm font-bold ${accent.text}`}>{title}</span>
+                            <span className="flex items-center gap-2">
+                              <input
+                                {...inputProps}
+                                id={id}
+                                value={value}
+                                onChange={(e) => setValue(e.target.value)}
+                                className={`${numberClass(toScore(value) > 0, accent.filled)} h-10 w-24`}
+                              />
+                              <span className="text-[11px] text-gray-400">คะแนน</span>
+                            </span>
+                          </label>
+                        );
+
+                        return (
+                          <>
+                            {renderGroup('คะแนนเก็บก่อนกลางภาค', preTotal,
+                              { text: 'text-indigo-600 dark:text-indigo-400', badge: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300', filled: 'border-indigo-400 bg-indigo-50 dark:bg-indigo-500/10' },
+                              preScores, setPreScores, 1)}
+                            {renderSingle('midtermScore', 'สอบกลางภาค', midtermScore, setMidtermScore,
+                              { text: 'text-emerald-600 dark:text-emerald-400', bar: 'border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/60 dark:bg-emerald-500/5', filled: 'border-emerald-400 bg-emerald-50 dark:bg-emerald-500/10' })}
+                            {renderGroup('คะแนนเก็บหลังกลางภาค', postTotal,
+                              { text: 'text-purple-600 dark:text-purple-400', badge: 'bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300', filled: 'border-purple-400 bg-purple-50 dark:bg-purple-500/10' },
+                              postScores, setPostScores, 10)}
+                            {renderSingle('finalScore', 'สอบปลายภาค', finalScore, setFinalScore,
+                              { text: 'text-rose-600 dark:text-rose-400', bar: 'border-rose-200 dark:border-rose-500/30 bg-rose-50/60 dark:bg-rose-500/5', filled: 'border-rose-400 bg-rose-50 dark:bg-rose-500/10' })}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -640,19 +758,6 @@ const CourseManagementPage: React.FC = () => {
                           <input type="checkbox" checked={isCombined} onChange={(e) => setIsCombined(e.target.checked)} className="sr-only peer" />
                           <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
                           <span className="ml-3 text-sm font-medium text-gray-900 dark:text-gray-300">เรียนรวม</span>
-                        </label>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <label className="relative inline-flex items-center cursor-pointer">
-                          <input type="checkbox" checked={isElective} onChange={(e) => {
-                            const val = e.target.checked;
-                            setIsElective(val);
-                            if (val) {
-                              setCourseType("เพิ่มเติม"); // วิชาเลือกมักเป็นวิชาเพิ่มเติม
-                            }
-                          }} className="sr-only peer" />
-                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-rose-300 dark:peer-focus:ring-rose-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-rose-600"></div>
-                          <span className="ml-3 text-sm font-medium text-gray-900 dark:text-gray-300">วิชาเลือกเสรี (Elective Course)</span>
                         </label>
                       </div>
                     </div>

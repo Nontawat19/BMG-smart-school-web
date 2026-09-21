@@ -307,11 +307,24 @@ const studentMatchesClassAndRoom = (st: any, selectedClass: string, selectedRoom
     }
     if (selectedRoomNumber && selectedRoomNumber !== 'all') {
         const sRoom = getStudentRecordRoom(st);
-        if (sRoom) {
-            return sRoom === normalizeRoom(selectedRoomNumber);
-        }
+        // นักเรียนที่ไม่มีข้อมูลห้องเลย "ไม่ใช่" นักเรียนของห้องที่เลือก — เดิมปล่อยผ่านเป็น true
+        // ทำให้เด็กที่ยังไม่ถูกกำหนดห้อง (เช่น นำเข้าใหม่) โผล่ซ้อนในทุกห้อง เห็นเป็น "2 ห้องพร้อมกัน"
+        // (และเรียงไว้บนสุดเพราะ room ว่าง = 0) จนครูคลิกเช็คผิดห้อง/ผิดวัน
+        if (!sRoom) return false;
+        return sRoom === normalizeRoom(selectedRoomNumber);
     }
     return true;
+};
+
+// นักเรียนในระดับชั้นที่เลือกที่ถูกตัดออกเพราะยังไม่ได้กำหนดห้อง (ไว้แสดงเตือนครู)
+const isMissingRoomForSelection = (st: any, selectedClass: string, selectedRoomNumber?: string): boolean => {
+    if (!selectedRoomNumber || selectedRoomNumber === 'all') return false;
+    if (!isStudentActive(st)) return false;
+    if (selectedClass) {
+        const rawClass = st?.classLevel || st?.className;
+        if (!(matchesClassValue(rawClass, selectedClass) || classMatchesSelection(rawClass, selectedClass))) return false;
+    }
+    return !getStudentRecordRoom(st);
 };
 
 // Calculate Calendar Year based on Academic Year + Semester + Month + Terms Data
@@ -496,6 +509,8 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
     const [courses, setCourses] = useState<Course[]>([]);
     const [students, setStudents] = useState<Student[]>([]);
+    const [studentsMissingRoom, setStudentsMissingRoom] = useState<Student[]>([]);
+    const [roomSelectionRequired, setRoomSelectionRequired] = useState(false);
     const [attendanceData, setAttendanceData] = useState<Record<string, Record<string, string>>>({}); // studentId -> { dateStr -> status }
     const [initialAttendanceData, setInitialAttendanceData] = useState<Record<string, Record<string, string>>>({});
     const [studentLeaves, setStudentLeaves] = useState<Record<string, Record<string, LeaveRecord>>>({}); // studentId -> { dateStr -> LeaveRecord }
@@ -1326,6 +1341,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             console.log("[HistoricalAttendance] Fetching codes:", finalSubjectCodes, "Class:", currentClassKey, "Room:", selectedRoomNumber);
 
             let studentList: Student[] = [];
+            let missingRoomList: Student[] = [];
 
             // Attempt to fetch from Enrollments first
             const courseId = courseObj?.id || selectedCourse;
@@ -1430,6 +1446,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                     });
                 }
                 studentList = studentDetails.filter(s => studentMatchesClassAndRoom(s, selectedClass, selectedRoomNumber));
+                missingRoomList = studentDetails.filter(s => isMissingRoomForSelection(s, selectedClass, selectedRoomNumber));
             }
 
             if (studentList.length === 0) {
@@ -1445,7 +1462,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 );
                 const sSnap = await getDocs(studentQ);
 
-                studentList = sSnap.docs
+                const fallbackStudents = sSnap.docs
                     .map(d => {
                         const data = d.data();
                         return {
@@ -1465,8 +1482,23 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                             studentStatus: data.studentStatus,
                         } as Student & { roomNumber: string };
                     })
-                    .filter(s => studentMatchesClassAndRoom(s, selectedClass, selectedRoomNumber));
+                    ;
+                studentList = fallbackStudents.filter(s => studentMatchesClassAndRoom(s, selectedClass, selectedRoomNumber));
+                missingRoomList = fallbackStudents.filter(s => isMissingRoomForSelection(s, selectedClass, selectedRoomNumber));
             }
+
+            // ไม่ได้เลือกห้อง แต่ระดับชั้นนี้มีหลายห้อง → ไม่ผสมรายชื่อหลายห้องในตารางเดียว (แต่ละห้องเช็คคนละวัน
+            // คนละคาบ ทำให้ครูสับสน/คลิกผิดห้อง) ให้เลือกห้องจากดร็อปดาวน์ก่อน
+            if (!selectedRoomNumber) {
+                const distinctRooms = new Set(studentList.map(getStudentRecordRoom).filter(Boolean));
+                if (distinctRooms.size > 1) {
+                    setRoomSelectionRequired(true);
+                    setStudents([]);
+                    setStudentsMissingRoom([]);
+                    return;
+                }
+            }
+            setRoomSelectionRequired(false);
 
             studentList.sort((a, b) => {
                 const roomA = parseInt(a.room || "0", 10) || 0;
@@ -1480,6 +1512,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 return (a.firstName || "").localeCompare(b.firstName || "", 'th');
             });
             setStudents(studentList);
+            setStudentsMissingRoom(missingRoomList);
 
             // 3. Fetch Leaves (Activity/Sick/etc.)
             // We need to check if any student has approved leave on generatedDates
@@ -1499,8 +1532,11 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                     const endDate = lData.endDate?.toDate ? lData.endDate.toDate() : new Date(lData.endDate);
 
                     // Normalize to YYYY-MM-DD
-                    const startStr = startDate.toISOString().split('T')[0];
-                    const endStr = endDate.toISOString().split('T')[0];
+                    // ใช้วันที่ตามเวลาท้องถิ่น — toISOString() เป็น UTC ทำให้วันที่เลื่อนถอยหลัง 1 วันในไทย (UTC+7)
+                    const toLocalISODate = (dt: Date) =>
+                        `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+                    const startStr = toLocalISODate(startDate);
+                    const endStr = toLocalISODate(endDate);
 
                     // Check intersection with generatedDates (which are DD-MM-YYYY)
                     // We need to convert generatedDates to YYYY-MM-DD for comparison
@@ -2691,17 +2727,15 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                 <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">รายวิชา</label>
                                 <Select
                                     options={filteredCourses.map(c => {
-                                        const roomLabel = c.room ? ` (ห้อง ${c.room})` : '';
                                         const groupLabel = c.groupNumber ? ` (กลุ่ม ${c.groupNumber})` : '';
-                                        return { value: c.id || c.code, label: `${c.code} - ${c.title}${groupLabel}${roomLabel}` };
+                                        return { value: c.id || c.code, label: `${c.code} - ${c.title}${groupLabel}` };
                                     })}
                                     isClearable
                                     placeholder={selectedClass ? 'เลือกรายวิชา...' : 'กรุณาเลือกชั้นเรียนก่อน'}
                                     isDisabled={!selectedClass}
                                     value={filteredCourses.map(c => {
-                                        const roomLabel = c.room ? ` (ห้อง ${c.room})` : '';
                                         const groupLabel = c.groupNumber ? ` (กลุ่ม ${c.groupNumber})` : '';
-                                        return { value: c.id || c.code, label: `${c.code} - ${c.title}${groupLabel}${roomLabel}` };
+                                        return { value: c.id || c.code, label: `${c.code} - ${c.title}${groupLabel}` };
                                     }).find(opt => opt.value === selectedCourse || filteredCourses.some(c => (c.id === selectedCourse || c.code === selectedCourse) && (c.id === opt.value || c.code === opt.value))) || null}
                                     onChange={(val) => setSelectedCourse(val ? val.value : '')}
                                     styles={selectStyles}
@@ -2798,6 +2832,24 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                         </div>
                     </div>
 
+
+                    {roomSelectionRequired && (
+                        <div className="rounded-xl border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50 dark:bg-indigo-500/10 px-4 py-3 text-xs font-bold text-indigo-800 dark:text-indigo-300">
+                            ระดับชั้นนี้มีหลายห้อง กรุณาเลือกห้องจากช่อง "ห้อง" ก่อน ระบบจะแสดงรายชื่อนักเรียนเฉพาะห้องที่เลือก
+                        </div>
+                    )}
+
+                    {studentsMissingRoom.length > 0 && (
+                        <div className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-4 py-3 text-xs text-amber-800 dark:text-amber-300">
+                            <p className="font-bold">
+                                ไม่แสดงนักเรียน {studentsMissingRoom.length} คนที่ยังไม่ได้กำหนดห้อง (ไม่รู้ว่าอยู่ห้องไหน จึงไม่นำมารวมกับห้อง {selectedRoomNumber})
+                            </p>
+                            <p className="mt-0.5 opacity-80">
+                                กรุณากำหนดห้องในข้อมูลนักเรียนก่อน: {studentsMissingRoom.slice(0, 5).map(s => `${s.prefix || ''}${s.firstName} ${s.lastName}`.trim()).join(', ')}
+                                {studentsMissingRoom.length > 5 ? ` และอีก ${studentsMissingRoom.length - 5} คน` : ''}
+                            </p>
+                        </div>
+                    )}
 
                     {/* Modern Summary Bar */}
                     {students.length > 0 && dates.length > 0 && (

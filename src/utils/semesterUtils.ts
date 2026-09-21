@@ -7,6 +7,8 @@ const ANNUAL_SEMESTER_VALUES = new Set([
   'ปีการศึกษา',
   'ทั้งปีการศึกษา',
   'ทั้งสองภาคเรียน',
+  'ตลอดปี',
+  'ตลอดปีการศึกษา',
 ]);
 
 export const normalizeSemesterValue = (semester?: string | number) => {

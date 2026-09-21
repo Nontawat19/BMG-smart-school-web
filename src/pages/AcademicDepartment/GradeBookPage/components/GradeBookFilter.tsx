@@ -253,7 +253,7 @@ const GradeBookFilter: React.FC<GradeBookFilterProps> = ({
                                 <div className="px-4 py-3 text-xs text-gray-400 text-center">ไม่พบรายวิชาที่ตรงกับคำค้นหา</div>
                             ) : (
                                 filteredCourses.map(c => {
-                                    const semesterTag = (c.semester === '1-2' || c.semester === 'annual' || !c.semester) ? ' [รายปี]' : '';
+                                    const semesterTag = (c.semester === '1-2' || c.semester === 'annual' || c.semester === '0' || !c.semester) ? ' [รายปี]' : '';
                                     return (
                                         <div
                                             key={c.id}

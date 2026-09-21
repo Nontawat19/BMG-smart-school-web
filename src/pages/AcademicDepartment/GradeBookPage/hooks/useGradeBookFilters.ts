@@ -133,7 +133,7 @@ export const useGradeBookFilters = (
             
             // Semester Filter Logic
             if (selectedSemester && selectedSemester !== 'annual') {
-                const isAnnualCourse = c.semester === '1-2' || c.semester === 'annual' || !c.semester;
+                const isAnnualCourse = c.semester === '1-2' || c.semester === 'annual' || c.semester === '0' || !c.semester;
                 if (!isAnnualCourse && c.semester !== selectedSemester) return false;
             }
 
