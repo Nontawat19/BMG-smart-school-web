@@ -48,6 +48,7 @@ import { calculateAttendanceBehaviorScoreChange } from "../../../utils/behaviorS
 import { isAttendanceEntryOnly } from "../../../utils/attendanceRoles";
 import { isStudyingStudent } from "../../../utils/studentStatusUtils";
 import { isActiveTeacherSummaryStatus } from "../../../utils/ownerStatsUtils";
+import { getDailySummaryTotal } from "../../../utils/attendanceDayProcessing";
 
 // Imports for collapsible right settings panel
 import { createPortal } from "react-dom";
@@ -270,6 +271,8 @@ const CheckinOutPage: React.FC = () => {
   const [checkoutTime, setCheckoutTime] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<string>("--:--:--");
   const [calendarEvents, setCalendarEvents] = useState<Record<string, any>>({});
+  // ช่วงภาคเรียน (main_calendar/default.terms) — ใช้กันไม่ให้ระบบตัดขาดอัตโนมัติทำงานในช่วงปิดภาคเรียน
+  const [calendarTerms, setCalendarTerms] = useState<any>(null);
   const [currentAcademicYear, setCurrentAcademicYear] = useState<string>("");
   const [isCalendarLoaded, setIsCalendarLoaded] = useState(false);
 
@@ -921,6 +924,7 @@ const CheckinOutPage: React.FC = () => {
             if (data.academicYear) {
               setCurrentAcademicYear(data.academicYear);
             }
+            setCalendarTerms(data.terms || null);
           }
 
           setCalendarEvents(firestoreEvents);
@@ -2851,8 +2855,10 @@ const CheckinOutPage: React.FC = () => {
     return null;
   };
 
-  const processAbsencesByType = async (targetType: "student" | "teacher") => {
-    if (!schoolId) return;
+  // คืนจำนวนคนที่ถูกตัดเป็น "ขาด" (0 = ไม่มีใครต้องตัด) หรือ null ถ้าประมวลผลไม่สำเร็จ — ผู้เรียกใช้ค่านี้
+  // เพื่อตัดสินใจว่าจะ "ถือว่ารอบของวันนี้เสร็จแล้ว" หรือไม่ (ล้มเหลว = ลองใหม่รอบถัดไป)
+  const processAbsencesByType = async (targetType: "student" | "teacher"): Promise<number | null> => {
+    if (!schoolId) return null;
 
     const todayStr = getCorrectedTodayString();
     const collName = targetType === "student" ? "students" : "teachers";
@@ -2941,17 +2947,22 @@ const CheckinOutPage: React.FC = () => {
       }
 
       console.log(`[processAbsencesByType:${targetType}] Marked ${count} as absent (idempotent, transaction-per-user).`);
+      return count;
     } catch (err) {
       console.error(`Absence processing error (${targetType}):`, err);
+      return null;
     }
   };
 
-  const processNoCheckout = async () => {
-    if (!schoolId) return;
+  // ตัดเป็น "ไม่ลงเวลาออก" สำหรับคนที่สแกนเข้าแล้วแต่ไม่สแกนออก (ทั้งนักเรียนและครู) — คืนจำนวนที่ถูกปรับ
+  // หรือ null ถ้าประมวลผลไม่สำเร็จ (เหมือน processAbsencesByType)
+  const processNoCheckout = async (targetType: "student" | "teacher" = "student"): Promise<number | null> => {
+    if (!schoolId) return null;
     const todayStr = getCorrectedTodayString();
+    const collName = targetType === "student" ? "students" : "teachers";
     try {
       const snap = await getDocs(
-        collection(firestore, "school-settings", schoolId, "students")
+        collection(firestore, "school-settings", schoolId, collName)
       );
       let count = 0;
 
@@ -2961,9 +2972,14 @@ const CheckinOutPage: React.FC = () => {
       // แบบ atomic ให้เห็นข้อมูลล่าสุดเสมอ และรันซ้ำกี่ครั้งก็ไม่บวก/ลบตัวนับซ้ำ (idempotent)
       for (const uDoc of snap.docs) {
         const userData = uDoc.data();
-        const attRef = doc(firestore, "school-settings", schoolId, "students", uDoc.id, "attendance", todayStr);
-        const studentRef = doc(firestore, "school-settings", schoolId, "students", uDoc.id);
-        const summaryRef = doc(firestore, "school-settings", schoolId, "students", "Attendance", "dyasummary", todayStr);
+        if (targetType === "teacher" && isAttendanceEntryOnly(userData.role)) continue;
+        const attRef = doc(firestore, "school-settings", schoolId, collName, uDoc.id, "attendance", todayStr);
+        const userRef = doc(firestore, "school-settings", schoolId, collName, uDoc.id);
+        // dyasummary/attendanceStats/คะแนนพฤติกรรม เป็นของฝั่งนักเรียนเท่านั้น (ฝั่งครูใช้แค่ตัวสรุปช่วงเวลา
+        // ผ่าน updatePeriodSummaries เหมือนตอนสแกนเข้า-ออกของครู)
+        const summaryRef = targetType === "student"
+          ? doc(firestore, "school-settings", schoolId, "students", "Attendance", "dyasummary", todayStr)
+          : null;
 
         const wasFlagged = await runTransaction(firestore, async (transaction) => {
           const freshAttSnap = await transaction.get(attRef);
@@ -2994,80 +3010,183 @@ const CheckinOutPage: React.FC = () => {
 
           // Firestore transactions require every read to happen before any write in the
           // same transaction — read the student doc first, then issue all the writes below.
-          const studentSnap = await transaction.get(studentRef);
+          const studentSnap = targetType === "student" ? await transaction.get(userRef) : null;
 
           transaction.update(attRef, { status: newStatus, remark: "Auto: ไม่ลงเวลาออก" });
 
-          const oldKey = getStatusKey(oldStatus);
-          const newKey = getStatusKey(newStatus);
-          const statsUpdate: Record<string, any> = {};
-          if (oldKey) statsUpdate[`attendanceStats.${oldKey}`] = increment(-1);
-          if (newKey) statsUpdate[`attendanceStats.${newKey}`] = increment(1);
-          if (Object.keys(statsUpdate).length > 0) transaction.update(studentRef, statsUpdate);
+          if (targetType === "student" && studentSnap && summaryRef) {
+            const oldKey = getStatusKey(oldStatus);
+            const newKey = getStatusKey(newStatus);
+            const statsUpdate: Record<string, any> = {};
+            if (oldKey) statsUpdate[`attendanceStats.${oldKey}`] = increment(-1);
+            if (newKey) statsUpdate[`attendanceStats.${newKey}`] = increment(1);
+            if (Object.keys(statsUpdate).length > 0) transaction.update(userRef, statsUpdate);
 
-          const freshScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? userData.behaviorScore ?? 100) : (userData.behaviorScore ?? 100);
-          const scoreChange = calculateAttendanceBehaviorScoreChange({
-            currentScore: freshScore,
+            const freshScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? userData.behaviorScore ?? 100) : (userData.behaviorScore ?? 100);
+            const scoreChange = calculateAttendanceBehaviorScoreChange({
+              currentScore: freshScore,
+              oldStatus,
+              newStatus,
+              config: schoolSettings?.behaviorScoreConfig,
+            });
+            if (scoreChange) {
+              transaction.set(userRef, scoreChange.update, { merge: true });
+            }
+
+            const classKey = userData.classLevel?.trim() || "ไม่ระบุชั้น";
+            const oldSummaryKey = getStatusKey(oldStatus);
+            const newSummaryKey = getStatusKey(newStatus);
+            if (oldSummaryKey !== newSummaryKey) {
+              const summaryUpdates: Record<string, any> = { updatedAt: serverTimestamp() };
+              if (oldSummaryKey) {
+                summaryUpdates[oldSummaryKey] = increment(-1);
+                summaryUpdates[`classes.${classKey}.${oldSummaryKey}`] = increment(-1);
+              }
+              if (newSummaryKey) {
+                summaryUpdates[newSummaryKey] = increment(1);
+                summaryUpdates[`classes.${classKey}.${newSummaryKey}`] = increment(1);
+              }
+              transaction.set(summaryRef, summaryUpdates, { merge: true });
+            }
+          }
+
+          updatePeriodSummaries(
+            firestore,
+            transaction,
+            schoolId,
+            uDoc.id,
+            collName,
+            todayStr,
             oldStatus,
             newStatus,
-            config: schoolSettings?.behaviorScoreConfig,
-          });
-          if (scoreChange) {
-            transaction.set(studentRef, scoreChange.update, { merge: true });
-          }
-
-          const classKey = userData.classLevel?.trim() || "ไม่ระบุชั้น";
-          const oldSummaryKey = getStatusKey(oldStatus);
-          const newSummaryKey = getStatusKey(newStatus);
-          if (oldSummaryKey !== newSummaryKey) {
-            const summaryUpdates: Record<string, any> = { updatedAt: serverTimestamp() };
-            if (oldSummaryKey) {
-              summaryUpdates[oldSummaryKey] = increment(-1);
-              summaryUpdates[`classes.${classKey}.${oldSummaryKey}`] = increment(-1);
-            }
-            if (newSummaryKey) {
-              summaryUpdates[newSummaryKey] = increment(1);
-              summaryUpdates[`classes.${classKey}.${newSummaryKey}`] = increment(1);
-            }
-            transaction.set(summaryRef, summaryUpdates, { merge: true });
-          }
-
-          updatePeriodSummaries(firestore, transaction, schoolId, uDoc.id, "students", todayStr, oldStatus, newStatus, classKey, currentAcademicYear);
+            targetType === "student" ? (userData.classLevel?.trim() || "ไม่ระบุชั้น") : undefined,
+            currentAcademicYear
+          );
           return true;
         });
 
         if (wasFlagged) count++;
       }
 
-      console.log(`[processNoCheckout] Flagged ${count} as no-checkout (idempotent, transaction-per-user).`);
+      console.log(`[processNoCheckout:${targetType}] Flagged ${count} as no-checkout (idempotent, transaction-per-user).`);
+      return count;
     } catch (err) {
-      console.error("No-checkout processing error:", err);
+      console.error(`No-checkout processing error (${targetType}):`, err);
+      return null;
     }
   };
 
-  useEffect(() => {
-    if (!schoolSettings || !calendarEvents || !isCalendarLoaded || isHoliday)
-      return;
+  // วันนี้อยู่ในช่วงภาคเรียนหรือไม่ (ตามปฏิทินโรงเรียน) — ใช้กันไม่ให้ตัดขาดทั้งโรงเรียนในช่วงปิดภาคเรียน
+  // ถ้ายังไม่ได้ตั้งช่วงภาคเรียนเลย ถือว่าไม่จำกัด และวันสอนชดเชย (schoolDay) ถือเป็นวันเรียนเสมอ
+  const isSchoolTermDay = (dateStr: string) => {
+    if (calendarEvents[dateStr]?.type === "schoolDay") return true;
+    const ranges = [calendarTerms?.term1, calendarTerms?.term2].filter((t) => t?.startDate && t?.endDate);
+    if (ranges.length === 0) return true;
+    return ranges.some((t: any) => dateStr >= t.startDate && dateStr <= t.endDate);
+  };
 
-    const checkTime = () => {
-      const now = new Date(Date.now() + timeOffset);
-      const timeStr = now.toLocaleTimeString("en-GB", {
+  const sweepRunningRef = useRef(false);
+  const sweepLastFailureRef = useRef<Record<string, number>>({});
+
+  // ตัดรอบประจำวันอัตโนมัติ: ถ้าเลยเวลาสิ้นสุดการลงเวลาแล้ว คนที่ "ไม่ลงเวลาเลย" ถูกตัดเป็น "ขาด" ทันที
+  // (นักเรียน = หลังสิ้นสุดลงเวลาเข้า, ครู = หลังสิ้นสุดลงเวลาออก) และนักเรียนที่สแกนเข้าแต่ไม่สแกนออกเป็น
+  // "ไม่ลงเวลาออก" เดิมเช็คแบบ "เวลาตรงนาทีพอดี" (timeStr === เวลาตัดรอบ) และทำเฉพาะนักเรียน ทำให้ครูไม่เคยถูกตัด
+  // และถ้าไม่ได้เปิดหน้านี้ค้างไว้ในนาทีนั้นก็ไม่มีใครถูกตัดเลย — ตอนนี้ใช้ "เลยเวลาแล้วและวันนี้ยังไม่เคยตัด"
+  // (ตามทัน) ทันทีที่มีเครื่องเปิดหน้านี้ ปลอดภัยที่จะรันซ้ำเพราะทุกคนเป็นทรานแซกชันที่เช็คเอกสารล่าสุดก่อนเขียน
+  // และจดว่ารอบไหนของวันนี้เสร็จแล้วไว้ในเครื่อง (ล้มเหลว = ไม่จด → ลองใหม่รอบถัดไป)
+  useEffect(() => {
+    if (!schoolId || !schoolSettings || !calendarEvents || !isCalendarLoaded || isHoliday) return;
+    // โหมดลงเวลาด้วยตนเองของครู (?mode=self) ไม่ใช่เครื่องคีออสก์ — ไม่ให้เป็นตัวสั่งตัดขาดทั้งโรงเรียน
+    if (isSelfServiceMode) return;
+    // นาฬิกาเครื่องยังไม่เคยยืนยันกับเซิร์ฟเวอร์ → ห้ามตัดสินจากเวลาเครื่อง (กันตัดขาดผิดเวลาทั้งโรงเรียน)
+    if (timeSyncStatus === "unverified") return;
+
+    // "ขาด" คำนวณครั้งเดียวต่อวัน หลังสิ้นสุดการลงเวลาออกของทั้งนักเรียนและครู (= เวลาที่ช้ากว่า) เหมือน Cloud Function
+    const absentSweepAfter = studentCheckoutEnd > teacherCheckoutEnd ? studentCheckoutEnd : teacherCheckoutEnd;
+    const doneStorageKey = (day: string, key: string) => `attendanceSweepDone:${schoolId}:${day}:${key}`;
+
+    const runDueSweeps = async () => {
+      if (sweepRunningRef.current) return;
+      const todayStr = getCorrectedTodayString();
+      if (!isSchoolTermDay(todayStr)) return;
+
+      const timeStr = new Date(Date.now() + timeOffset).toLocaleTimeString("en-GB", {
         timeZone: "Asia/Bangkok",
         hour: "2-digit",
         minute: "2-digit",
       });
 
-      if (timeStr === studentCheckinEnd) {
-        processAbsencesByType("student");
-      }
-      if (timeStr === studentCheckoutEnd) {
-        processNoCheckout();
+      const tasks: { key: string; label: string; end: string; run: () => Promise<number | null> }[] = [
+        // "ขาด" ตัดเฉพาะเมื่อกลุ่มนั้นมีการสแกนจริงอย่างน้อยหนึ่งคนในวันนี้ — ถ้าทั้งวันไม่มีใครสแกนเลย (ไฟดับ/ระบบใช้ไม่ได้)
+        // จะไม่ตัดขาดทั้งกลุ่มอัตโนมัติ (ตรงกับ Cloud Function ตัดขาดอัตโนมัติฝั่งเซิร์ฟเวอร์)
+        { key: "student-absent", label: "นักเรียนขาด", end: absentSweepAfter, run: async () => (await getDailySummaryTotal(schoolId, "students", todayStr)) > 0 ? processAbsencesByType("student") : 0 },
+        { key: "student-nocheckout", label: "นักเรียนไม่ลงเวลาออก", end: studentCheckoutEnd, run: () => processNoCheckout("student") },
+        // ครู: ตัดเฉพาะ "ขาด" (ไม่ลงเวลาทั้งเข้าและออก) — ไม่ปรับคนที่สแกนเข้าแล้วเป็น "ไม่ลงเวลาออกอัตโนมัติ"
+        // เพราะโรงเรียนที่ครูไม่ได้สแกนออกเป็นปกติ จะทำให้ประวัติมาปกติทั้งหมดถูกเปลี่ยนสถานะ
+        { key: "teacher-absent", label: "ครูขาด", end: absentSweepAfter, run: async () => (await getDailySummaryTotal(schoolId, "teachers", todayStr)) > 0 ? processAbsencesByType("teacher") : 0 },
+      ];
+
+      sweepRunningRef.current = true;
+      try {
+        for (const task of tasks) {
+          if (!task.end || timeStr < task.end) continue;
+          const storageKey = doneStorageKey(todayStr, task.key);
+          let alreadyDone = false;
+          try { alreadyDone = localStorage.getItem(storageKey) === "1"; } catch { /* ignore */ }
+          if (alreadyDone) continue;
+          // เพิ่งล้มเหลวไป (เช่น สิทธิ์ไม่พอ/เน็ตหลุด) → รอ 10 นาทีค่อยลองใหม่ ไม่อ่านข้อมูลทั้งโรงเรียนซ้ำทุกนาที
+          const failedAt = sweepLastFailureRef.current[storageKey];
+          if (failedAt && Date.now() - failedAt < 10 * 60 * 1000) continue;
+
+          const result = await task.run();
+          if (result === null) {
+            sweepLastFailureRef.current[storageKey] = Date.now(); // ล้มเหลว — ไม่จดว่าเสร็จ จะลองใหม่ภายหลัง
+            continue;
+          }
+
+          try {
+            // ล้างรอยจดของวันก่อนๆ ของโรงเรียนนี้ แล้วจดรอบนี้ของวันนี้
+            const prefix = `attendanceSweepDone:${schoolId}:`;
+            Object.keys(localStorage)
+              .filter((k) => k.startsWith(prefix) && !k.startsWith(`${prefix}${todayStr}:`))
+              .forEach((k) => localStorage.removeItem(k));
+            localStorage.setItem(storageKey, "1");
+          } catch { /* ignore */ }
+
+          if (result > 0) {
+            Swal.fire({
+              icon: "info",
+              title: `ตัดสถานะอัตโนมัติ: ${task.label} ${result} คน`,
+              toast: true,
+              position: "top-end",
+              showConfirmButton: false,
+              timer: 5000,
+            });
+          }
+        }
+      } finally {
+        sweepRunningRef.current = false;
       }
     };
 
-    const timer = setInterval(checkTime, 60 * 1000);
+    runDueSweeps(); // ตามทันทันทีถ้าเปิดหน้านี้หลังเลยเวลาตัดรอบแล้ว
+    const timer = setInterval(runDueSweeps, 60 * 1000);
     return () => clearInterval(timer);
-  }, [schoolSettings, calendarEvents, isCalendarLoaded, isHoliday, timeOffset, studentCheckinEnd, studentCheckoutEnd]);
+  }, [
+    schoolId,
+    schoolSettings,
+    calendarEvents,
+    calendarTerms,
+    isCalendarLoaded,
+    isHoliday,
+    isSelfServiceMode,
+    timeSyncStatus,
+    timeOffset,
+    studentCheckinEnd,
+    studentCheckoutEnd,
+    teacherCheckoutEnd,
+    currentAcademicYear,
+  ]);
 
   const userName = (currentUser as any)?.displayName || "ผู้ดูแลระบบ";
   const currentUserIdForCamera = (currentUser as any)?.uid || (currentUser as any)?.id || "";

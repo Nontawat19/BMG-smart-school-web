@@ -241,7 +241,7 @@ export default function ViewTeacherPage() {
           const reqRef = collection(firestore, "school-settings", schoolId, "teachers", teacherId, "travel_summary");
           const q = query(reqRef, orderBy("createdAt", "desc"));
           const snapshot = await getDocs(q);
-          const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          const requests = snapshot.docs.map(doc => ({ id: doc.id, docPath: doc.ref.path, ...doc.data() }));
           setOfficialTravelRequests(requests);
         } catch (err) {
           console.error("Error fetching travel requests:", err);

@@ -17,6 +17,7 @@ import {
     LearnerActivityTeacherScope,
     buildLearnerActivityEvaluationDocId,
     deriveTeacherScopesFromCourse,
+    getAssignmentTeacherIds,
 } from '@/utils/learnerActivityUtils';
 
 export type FlagType = '0' | 'ร' | 'มส' | 'มผ';
@@ -173,6 +174,37 @@ export const getTeacherDisplayName = (teacherMap: Record<string, any>, teacherId
     if (t?.firstName) return `ครู${t.firstName}`;
     if (t?.name) return t.name;
     return '-';
+};
+
+// วิชาที่สอนคู่กัน/มีครูสอนหลายคนในกลุ่มเดียวกัน (teacherAssignments[].teacherIds มีมากกว่า 1 คน) —
+// ให้ระบบแสดงผล 0/ร/มส/มผ และมอบหมายความรับผิดชอบให้ "ครูหลัก" เพียงคนเดียวเสมอ (คนแรกในลำดับ teacherIds
+// ตามธรรมเนียมเดียวกับที่ deriveTeacherScopesFromCourse ในหน้ากิจกรรมพัฒนาผู้เรียนใช้อยู่แล้ว — ดู
+// learnerActivityUtils.ts) ไม่ใช่ครูร่วมสอนทุกคน เพื่อไม่ให้ครูหลายคนเห็น/แก้ไขเคสเดียวกันซ้ำซ้อนกัน และไม่ให้
+// เคสหายไปเงียบๆ เมื่อวิชานั้นไม่มีฟิลด์ teacherId (เดี่ยว) แบบเก่าเหลืออยู่เลย มีแต่ teacherIds (อาเรย์) แบบใหม่
+// ⚠️ เดิมมีฟังก์ชัน getTeacherForAssignment ทำนองนี้ซ้ำกันอยู่ 3 จุดในไฟล์นี้ ต่างอ่านแค่ ta.teacherId (เดี่ยว)
+// ไม่อ่าน ta.teacherIds (อาเรย์) เลย — วิชาที่มีแต่ teacherIds จึงหาครูรับผิดชอบไม่เจอเลย รวมศูนย์ไว้ที่นี่ที่เดียว
+export const getMainTeacherForCourseTerm = (
+    assignmentsByCourse: Record<string, any[]>,
+    courseId: string,
+    academicYear: string,
+    semester: string,
+    teacherMap: Record<string, any>,
+): { id: string | undefined; name: string; ids: string[] } => {
+    const matches = (assignmentsByCourse[courseId] || []).filter(a => String(a.academicYear) === academicYear && String(a.semester) === semester);
+    // ไล่หาแอสไซน์เมนต์แรกที่มีครูจริงๆ (กันกรณี groupNumber แรกยังไม่ได้มอบหมายครูแต่กลุ่มถัดไปมอบหมายแล้ว)
+    for (const assignment of matches) {
+        for (const ta of (assignment.teacherAssignments || [])) {
+            const mainTeacherId = getAssignmentTeacherIds(ta)[0];
+            if (mainTeacherId) {
+                return {
+                    id: mainTeacherId,
+                    name: getTeacherDisplayName(teacherMap, mainTeacherId, ta.teacherName),
+                    ids: [mainTeacherId],
+                };
+            }
+        }
+    }
+    return { id: undefined, name: '-', ids: [] };
 };
 
 // แจ้งเตือนครูผู้รับผิดชอบวิชา/กิจกรรมเมื่อมีคำร้องขอสอบแก้ตัวเข้ามาใหม่ — ใช้ร่วมกันทั้งตอนนักเรียน
@@ -470,13 +502,8 @@ export const fetchFlaggedStudents = async (
         remarksByCourse[cid] = remarkMap;
     });
 
-    const getTeacherForAssignment = (courseId: string, academicYear: string, semester: string) => {
-        const matches = (assignmentsByCourse[courseId] || []).filter(a => String(a.academicYear) === academicYear && String(a.semester) === semester);
-        const firstAssignment = matches[0]?.teacherAssignments?.[0];
-        if (!firstAssignment) return { name: '-', ids: [] as string[] };
-        const ids = matches.flatMap(m => (m.teacherAssignments || []).map((ta: any) => ta.teacherId).filter(Boolean));
-        return { name: getTeacherDisplayName(teacherMap, firstAssignment.teacherId, firstAssignment.teacherName), ids: Array.from(new Set(ids)) };
-    };
+    const getTeacherForAssignment = (courseId: string, academicYear: string, semester: string) =>
+        getMainTeacherForCourseTerm(assignmentsByCourse, courseId, academicYear, semester, teacherMap);
 
     const flaggedByStudent: Record<string, FlaggedCourse[]> = {};
     const getFlagDedupKey = (f: FlaggedCourse) => {
@@ -614,10 +641,13 @@ export const fetchFlaggedStudents = async (
                     failed = results[e.studentId].status === 'failed';
                     resolvedRemark = results[e.studentId].remark || '';
                     const matchedScope = scopes.find(s => s.key === scopeKey);
+                    // matchedScope.teacherId คือ "ครูหลัก" ที่ deriveTeacherScopesFromCourse เลือกไว้แล้ว
+                    // (คนแรกใน teacherIds ของกลุ่มนั้น) — ใช้ค่านี้ค่าเดียว ไม่ใช้ .teacherIds ทั้งอาเรย์ ไม่งั้น
+                    // ครูร่วมสอนทุกคนจะเห็น/แก้ไขเคส มผ เดียวกันซ้ำกันหมด ขัดกับ "แสดงที่ครูหลักเท่านั้น"
                     const scopeTeacherName = getTeacherDisplayName(teacherMap, matchedScope?.teacherId, matchedScope?.teacherName);
                     const fallback = getTeacherForAssignment(courseId, e.academicYear, e.semester);
                     teacherName = scopeTeacherName !== '-' ? scopeTeacherName : fallback.name;
-                    responsibleTeacherIds = matchedScope?.teacherIds && matchedScope.teacherIds.length > 0 ? matchedScope.teacherIds : fallback.ids;
+                    responsibleTeacherIds = matchedScope?.teacherId ? [matchedScope.teacherId] : fallback.ids;
                     flagKind = 'learner-activity';
                     activityCollectionName = 'learner-activities';
                     resolvedActivityDocId = activityDocId;
@@ -937,13 +967,8 @@ export const fetchFullRoster = async (
     const regularEnrollments = enrollments.filter(e => !isActivityCourseCode(courseMap[e.courseId]?.code));
     const activityEnrollments = enrollments.filter(e => isActivityCourseCode(courseMap[e.courseId]?.code));
 
-    const getTeacherForAssignment = (courseId: string, academicYear: string, semester: string) => {
-        const matches = (assignmentsByCourse[courseId] || []).filter(a => String(a.academicYear) === academicYear && String(a.semester) === semester);
-        const firstAssignment = matches[0]?.teacherAssignments?.[0];
-        if (!firstAssignment) return { name: '-', ids: [] as string[] };
-        const ids = matches.flatMap(m => (m.teacherAssignments || []).map((ta: any) => ta.teacherId).filter(Boolean));
-        return { name: getTeacherDisplayName(teacherMap, firstAssignment.teacherId, firstAssignment.teacherName), ids: Array.from(new Set(ids)) };
-    };
+    const getTeacherForAssignment = (courseId: string, academicYear: string, semester: string) =>
+        getMainTeacherForCourseTerm(assignmentsByCourse, courseId, academicYear, semester, teacherMap);
 
     const rows: FullRosterRow[] = [];
 
@@ -1082,10 +1107,11 @@ export const fetchFullRoster = async (
                 if (results?.[e.studentId]) {
                     resultStatus = results[e.studentId].status;
                     const matchedScope = scopes.find(s => s.key === scopeKey);
+                    // ใช้ครูหลักคนเดียว (matchedScope.teacherId) เหมือนกับจุดอื่น — ไม่ใช้ .teacherIds ทั้งอาเรย์
                     const scopeTeacherName = getTeacherDisplayName(teacherMap, matchedScope?.teacherId, matchedScope?.teacherName);
                     const fallback = getTeacherForAssignment(courseId, e.academicYear, e.semester);
                     teacherName = scopeTeacherName !== '-' ? scopeTeacherName : fallback.name;
-                    responsibleTeacherIds = matchedScope?.teacherIds && matchedScope.teacherIds.length > 0 ? matchedScope.teacherIds : fallback.ids;
+                    responsibleTeacherIds = matchedScope?.teacherId ? [matchedScope.teacherId] : fallback.ids;
                     flagKind = 'learner-activity';
                     activityCollectionName = 'learner-activities';
                     resolvedActivityDocId = activityDocId;
@@ -1286,12 +1312,8 @@ export const fetchStudentTranscript = async (
         if (courseMap[d.id]) activityDocByCourseId[d.id] = d.id;
     });
 
-    const getTeacherForAssignment = (courseId: string, academicYear: string, semester: string) => {
-        const matches = (assignmentsByCourse[courseId] || []).filter(a => String(a.academicYear) === academicYear && String(a.semester) === semester);
-        const firstAssignment = matches[0]?.teacherAssignments?.[0];
-        if (!firstAssignment) return '-';
-        return getTeacherDisplayName(teacherMap, firstAssignment.teacherId, firstAssignment.teacherName);
-    };
+    const getTeacherForAssignment = (courseId: string, academicYear: string, semester: string) =>
+        getMainTeacherForCourseTerm(assignmentsByCourse, courseId, academicYear, semester, teacherMap).name;
 
     interface EnrollmentFull { courseId: string; academicYear: string; semester: string; classLevel: string }
     const enrollments: EnrollmentFull[] = [];

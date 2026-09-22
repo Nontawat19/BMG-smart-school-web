@@ -13,6 +13,7 @@ import Swal from 'sweetalert2';
 import { FaPen, FaArrowLeft, FaChalkboard, FaUser, FaUsers, FaBook, FaBookOpen, FaChevronRight, FaChevronLeft, FaChevronDown, FaClock, FaFlag, FaSignOutAlt, FaSun, FaMoon, FaBars, FaTimes, FaUserPlus, FaExchangeAlt, FaHourglassHalf, FaPlane, FaIdCard, FaMapMarkerAlt, FaHeartbeat, FaBus, FaGraduationCap, FaEye, FaEyeSlash, FaFilePdf, FaCheckCircle, FaCheck, FaShieldAlt, FaBell, FaClipboardList, FaAward } from "react-icons/fa";
 import { pdf } from '@react-pdf/renderer';
 import LeaveRequestPdfDocument from '@/components/Pdf/leave/LeaveRequestPdfDocument';
+import { archiveGeneratedPdf } from '@/utils/pdfArchiveUtils';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { Chart } from "react-google-charts";
 import { useTheme } from "../../ThemeContext";
@@ -1103,14 +1104,23 @@ export default function ViewStudentPage() {
         logoUrl,
       };
       const blob = await pdf(<LeaveRequestPdfDocument data={dataForPdf} today={today} />).toBlob();
+      const fileName = `ใบลา-${dataForPdf.studentName}.pdf`;
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `ใบลา-${dataForPdf.studentName}.pdf`;
+      link.download = fileName;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+
+      // ใบลาเป็นเอกสารที่อนุมัติแล้ว ใช้ตรวจสอบย้อนหลังกรณีมีข้อโต้แย้งเรื่องขาด/ลา — เก็บสำเนาไฟล์จริงไว้
+      try {
+        const { url: pdfUrl, storagePath } = await archiveGeneratedPdf(schoolId, "student-leaves", blob, fileName);
+        await updateDoc(doc(firestore, "school-settings", schoolId, "students", studentId!, "leave_summary", req.id), { pdfUrl, storagePath });
+      } catch (archiveErr) {
+        console.warn("Could not archive leave PDF:", archiveErr);
+      }
     } catch (err) {
       console.error("Failed to generate leave PDF:", err);
     } finally {

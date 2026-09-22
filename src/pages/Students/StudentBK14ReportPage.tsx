@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useSelector } from "react-redux";
-import { collection, doc, documentId, getDoc, getDocs, query, where } from "firebase/firestore";
+import { addDoc, collection, doc, documentId, getDoc, getDocs, query, Timestamp, where } from "firebase/firestore";
 import { Document, Font, Image, Page, StyleSheet, Text, View, pdf, PDFViewer } from "@react-pdf/renderer";
 import { saveAs } from "file-saver";
+import { archiveGeneratedPdf } from "@/utils/pdfArchiveUtils";
 import Swal from "sweetalert2";
 import { AlertTriangle, CalendarDays, CheckCircle, FileDown, RefreshCw, Search, X, Loader2 } from "lucide-react";
 import MainLayout from "@/layouts/MainLayout";
@@ -514,7 +515,9 @@ const StudentBK14ReportPage: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(false);
-  const [pdfPreview, setPdfPreview] = useState<{ document: React.ReactNode; fileName: string; onDownloaded?: () => void } | null>(null);
+  // archiveMeta: มีเฉพาะกรณีใบแจ้งเตือนรายบุคคล (บ.ค.14 ของนักเรียนคนนั้น) — เก็บสำเนาไฟล์จริงไว้ตอนดาวน์โหลด
+  // เพราะเป็นเอกสารแจ้งเตือน/หลักฐานทางวินัยที่ต้องคงสภาพ ณ เวลาที่ออก ส่วนรายงานสรุปรวมไม่จำเป็นต้องเก็บ
+  const [pdfPreview, setPdfPreview] = useState<{ document: React.ReactNode; fileName: string; onDownloaded?: () => void; archiveMeta?: { studentId: string; studentName: string; classLevel: string; room: string } } | null>(null);
   const [isDownloadingPreviewPdf, setIsDownloadingPreviewPdf] = useState(false);
   const [schoolName, setSchoolName] = useState("-");
   const [schoolInfo, setSchoolInfo] = useState<SchoolInfo>(defaultSchoolInfo);
@@ -691,6 +694,7 @@ const StudentBK14ReportPage: React.FC = () => {
       // Only mark the row as "reported" once the teacher actually downloads it from the
       // preview, not just for opening the preview and closing it without saving.
       onDownloaded: () => markRowReported(row),
+      archiveMeta: { studentId: row.id, studentName: row.fullName, classLevel: row.classLevel, room: row.room },
     });
   };
 
@@ -701,6 +705,24 @@ const StudentBK14ReportPage: React.FC = () => {
       const blob = await pdf(pdfPreview.document as any).toBlob();
       saveAs(blob, pdfPreview.fileName);
       pdfPreview.onDownloaded?.();
+
+      if (schoolId && pdfPreview.archiveMeta) {
+        try {
+          const { url, storagePath } = await archiveGeneratedPdf(schoolId, "behavior-records", blob, pdfPreview.fileName);
+          await addDoc(collection(firestore, "school-settings", schoolId, "behavior-records"), {
+            studentId: pdfPreview.archiveMeta.studentId,
+            studentName: pdfPreview.archiveMeta.studentName,
+            classLevel: pdfPreview.archiveMeta.classLevel,
+            room: pdfPreview.archiveMeta.room,
+            month: selectedMonth,
+            pdfUrl: url,
+            storagePath,
+            createdAt: Timestamp.now(),
+          });
+        } catch (archiveErr) {
+          console.warn("Could not archive บ.ค.14 PDF:", archiveErr);
+        }
+      }
     } finally {
       setIsDownloadingPreviewPdf(false);
     }

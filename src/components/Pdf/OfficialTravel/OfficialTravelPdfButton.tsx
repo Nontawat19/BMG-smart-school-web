@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { pdf, PDFViewer } from '@react-pdf/renderer';
 import { saveAs } from 'file-saver';
+import { doc, updateDoc } from 'firebase/firestore';
+import { firestore } from '@/firebase';
 import { FaPrint, FaSpinner, FaTimes } from 'react-icons/fa';
 import OfficialTravelPdfDocument from './OfficialTravelPdfDocument';
+import { archiveGeneratedPdf } from '@/utils/pdfArchiveUtils';
 
 interface Props {
     data: any;
@@ -49,9 +52,26 @@ const OfficialTravelPdfButton: React.FC<Props> = ({ data, schoolName, schoolAffi
 
     const handleDownload = async () => {
         setIsDownloading(true);
+        const fileName = `บันทึกข้อความ_${data.subject || 'ไปราชการ'}.pdf`;
         try {
             const blob = await pdf(<OfficialTravelPdfDocument data={pdfData} />).toBlob();
-            saveAs(blob, `บันทึกข้อความ_${data.subject || 'ไปราชการ'}.pdf`);
+            saveAs(blob, fileName);
+
+            // เอกสารอนุมัติไปราชการต้องคงสภาพ ณ เวลาที่ออก — เก็บสำเนาไฟล์จริงไว้ใน Storage แล้วแนบ URL
+            // กลับเข้าไปในเรคคอร์ดคำขอเดิม (data.docPath = path เต็มของเอกสาร travel_summary ที่ผู้เรียกส่งมา
+            // ถ้าไม่มีค่านี้ แปลว่าหน้าที่เรียกยังไม่รองรับ ข้ามการเก็บสำเนาไปเงียบๆ ไม่กระทบการดาวน์โหลด)
+            const docPath: string | undefined = data.docPath;
+            if (docPath) {
+                try {
+                    const schoolIdFromPath = docPath.split('/')[1];
+                    if (schoolIdFromPath) {
+                        const { url, storagePath } = await archiveGeneratedPdf(schoolIdFromPath, "official-travel", blob, fileName);
+                        await updateDoc(doc(firestore, docPath), { pdfUrl: url, storagePath });
+                    }
+                } catch (archiveErr) {
+                    console.warn('Could not archive official travel PDF:', archiveErr);
+                }
+            }
         } catch (err) {
             console.error('Error generating official travel PDF:', err);
         } finally {

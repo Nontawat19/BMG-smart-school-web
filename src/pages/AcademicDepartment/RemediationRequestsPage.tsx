@@ -21,6 +21,7 @@ import {
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import { pdf, PDFViewer } from '@react-pdf/renderer';
 import { saveAs } from 'file-saver';
+import { archiveGeneratedPdf } from '@/utils/pdfArchiveUtils';
 import { RemediationRequestPdfDocument, RemediationRequestPdfBulkDocument } from '@/components/Pdf/remediation';
 import { getThaiYear } from '@/utils/dateUtils';
 import { CLASS_MAPPING, CLASS_FULL_NAMES, getClassLevelRank } from '@/utils/schoolUtils';
@@ -104,7 +105,7 @@ const RemediationRequestsPage: React.FC = () => {
     };
 
     const [schoolInfo, setSchoolInfo] = useState<any>(null);
-    const [pdfPreview, setPdfPreview] = useState<{ document: React.ReactNode; fileName: string } | null>(null);
+    const [pdfPreview, setPdfPreview] = useState<{ document: React.ReactNode; fileName: string; archiveRequestId?: string } | null>(null);
     const [isDownloadingPreviewPdf, setIsDownloadingPreviewPdf] = useState(false);
     const [printingId, setPrintingId] = useState<string | null>(null);
     const [printingBulk, setPrintingBulk] = useState(false);
@@ -626,7 +627,7 @@ const RemediationRequestsPage: React.FC = () => {
         try {
             const entry = await buildPdfEntry([req]);
             const docToRender = <RemediationRequestPdfDocument {...entry} />;
-            setPdfPreview({ document: docToRender, fileName: `คำร้องขอสอบแก้ตัว_${req.studentCode}_${req.studentName}.pdf` });
+            setPdfPreview({ document: docToRender, fileName: `คำร้องขอสอบแก้ตัว_${req.studentCode}_${req.studentName}.pdf`, archiveRequestId: req.id });
         } catch (err) {
             console.error('Error building remediation PDF:', err);
             Swal.fire('ผิดพลาด', 'ไม่สามารถสร้างไฟล์ PDF ได้', 'error');
@@ -670,6 +671,16 @@ const RemediationRequestsPage: React.FC = () => {
         try {
             const blob = await pdf(pdfPreview.document as any).toBlob();
             saveAs(blob, pdfPreview.fileName);
+
+            // คำร้องมีสถานะอนุมัติ/ยกเลิกผูกอยู่ (เหมือนใบลา) — เก็บสำเนาไฟล์ ณ เวลาที่ออกไว้
+            if (schoolId && pdfPreview.archiveRequestId) {
+                try {
+                    const { url, storagePath } = await archiveGeneratedPdf(schoolId, "remediation-requests", blob, pdfPreview.fileName);
+                    await updateDoc(doc(db, 'school-settings', schoolId, 'remediation_requests', pdfPreview.archiveRequestId), { pdfUrl: url, storagePath });
+                } catch (archiveErr) {
+                    console.warn('Could not archive remediation request PDF:', archiveErr);
+                }
+            }
         } finally {
             setIsDownloadingPreviewPdf(false);
         }

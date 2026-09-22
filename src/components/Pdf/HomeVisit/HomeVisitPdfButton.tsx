@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { pdf } from '@react-pdf/renderer';
 import { firestore } from '@/firebase';
-import { collection, query, orderBy, getDocs, limit, where, doc, getDoc } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, limit, where, doc, getDoc, updateDoc, type DocumentReference } from 'firebase/firestore';
 import { Printer, Loader2 } from 'lucide-react';
 import { HomeVisitData, Student, FamilyMember } from './types';
 import Swal from 'sweetalert2';
 import HomeVisitDocument from './HomeVisitDocument';
+import { archiveGeneratedPdf } from '@/utils/pdfArchiveUtils';
 
 interface Props {
     student: Student;
@@ -70,6 +71,7 @@ const HomeVisitPdfButton: React.FC<Props> = ({ student, schoolId, teacherName, t
             teachers,
             schoolName,
             educationArea,
+            visitDocRef: visitDoc.ref as DocumentReference,
         };
     };
 
@@ -94,14 +96,23 @@ const HomeVisitPdfButton: React.FC<Props> = ({ student, schoolId, teacherName, t
             );
 
             const blob = await pdf(pdfDocument).toBlob();
+            const fileName = `แบบฟอร์มบันทึกการเยี่ยมบ้าน_${student.firstName}_${student.lastName}.pdf`;
             const blobUrl = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = blobUrl;
-            link.download = `แบบฟอร์มบันทึกการเยี่ยมบ้าน_${student.firstName}_${student.lastName}.pdf`;
+            link.download = fileName;
             document.body.appendChild(link);
             link.click();
             link.remove();
             URL.revokeObjectURL(blobUrl);
+
+            // หลักฐานว่าได้ดำเนินการเยี่ยมบ้านจริง — เก็บสำเนาไฟล์ไว้ใน Storage แนบกับบันทึกการเยี่ยมครั้งนี้
+            try {
+                const { url, storagePath } = await archiveGeneratedPdf(schoolId, "home-visits", blob, fileName);
+                await updateDoc(payload.visitDocRef, { pdfUrl: url, storagePath });
+            } catch (archiveErr) {
+                console.warn("Could not archive home visit PDF:", archiveErr);
+            }
         } catch (error) {
             console.error("Error generating visit PDF:", error);
             Swal.fire({

@@ -352,6 +352,19 @@ exports.cleanupExpiredChatImages = functions
         return { checked: snapshot.size, deletedCount };
     });
 
+// ─── ตัดขาดอัตโนมัติ (ไม่ต้องเปิดหน้าลงเวลาค้างไว้) ──────────────────────────────
+// ทำงานทุก 15 นาทีช่วง 12:00–23:59 (ตัดรอบครั้งเดียวต่อวันหลังสิ้นสุดลงเวลาออก) เฉพาะโรงเรียนที่เปิด
+// attendanceConfig.autoMarkAbsent — รายละเอียดกติกาดู functions/autoAbsence.js
+exports.autoMarkAbsences = functions
+    .region("us-central1")
+    .runWith({ timeoutSeconds: 540, memory: "512MB" })
+    .pubsub.schedule("*/15 12-23 * * *")
+    .timeZone("Asia/Bangkok")
+    .onRun(async () => {
+        const { runAutoMarkAbsences } = require("./autoAbsence");
+        return runAutoMarkAbsences();
+    });
+
 // ─── MA Expiry Notification ──────────────────────────────────────────────────
 // แจ้งเตือนผู้ดูแลระบบสูงสุด (super_admin) เมื่อเหลือ <= 30 วันก่อนหมด MA ของแต่ละโรงเรียน
 // ข้อมูล MA เก็บแยกที่ school-settings/{schoolId}/summaries/license (อ่านได้เฉพาะ SUPER_ADMIN)

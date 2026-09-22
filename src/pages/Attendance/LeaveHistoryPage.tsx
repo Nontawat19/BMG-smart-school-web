@@ -14,11 +14,13 @@ import {
   doc,
   getDoc,
   limit,
+  updateDoc,
 } from 'firebase/firestore';
 import { FaFilePdf, FaSearch, FaPhone, FaLine } from 'react-icons/fa';
 import { X, FileDown, Loader2 } from 'lucide-react';
 import { pdf, PDFViewer } from '@react-pdf/renderer';
 import { saveAs } from 'file-saver';
+import { archiveGeneratedPdf } from '@/utils/pdfArchiveUtils';
 import LeaveRequestPdfDocument from '@/components/Pdf/leave/LeaveRequestPdfDocument';
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
@@ -98,7 +100,7 @@ const LeaveHistoryPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [exportingId, setExportingId] = useState<string | null>(null);
-  const [pdfPreview, setPdfPreview] = useState<{ document: React.ReactNode; fileName: string } | null>(null);
+  const [pdfPreview, setPdfPreview] = useState<{ document: React.ReactNode; fileName: string; archiveRef?: { schoolId: string; docId: string } } | null>(null);
   const [isDownloadingPreviewPdf, setIsDownloadingPreviewPdf] = useState(false);
   const [selectedClass, setSelectedClass] = useState<string>('');
 
@@ -292,7 +294,11 @@ const LeaveHistoryPage: React.FC = () => {
       };
 
       const docToRender = <LeaveRequestPdfDocument data={dataForPdf} today={today} />;
-      setPdfPreview({ document: docToRender, fileName: `ใบลา-${r.studentName}.pdf` });
+      setPdfPreview({
+        document: docToRender,
+        fileName: `ใบลา-${r.studentName}.pdf`,
+        archiveRef: targetSchoolId ? { schoolId: targetSchoolId, docId: r.id } : undefined,
+      });
     } catch (error) {
       console.error("Failed to generate PDF:", error);
     } finally {
@@ -306,6 +312,16 @@ const LeaveHistoryPage: React.FC = () => {
     try {
       const blob = await pdf(pdfPreview.document as any).toBlob();
       saveAs(blob, pdfPreview.fileName);
+
+      // ใบลาเป็นเอกสารที่อนุมัติแล้ว ใช้ตรวจสอบย้อนหลังกรณีมีข้อโต้แย้งเรื่องขาด/ลา — เก็บสำเนาไฟล์จริงไว้
+      if (pdfPreview.archiveRef) {
+        try {
+          const { url, storagePath } = await archiveGeneratedPdf(pdfPreview.archiveRef.schoolId, "student-leaves", blob, pdfPreview.fileName);
+          await updateDoc(doc(firestore, "school-settings", pdfPreview.archiveRef.schoolId, "leave_summary", pdfPreview.archiveRef.docId), { pdfUrl: url, storagePath });
+        } catch (archiveErr) {
+          console.warn("Could not archive leave PDF:", archiveErr);
+        }
+      }
     } finally {
       setIsDownloadingPreviewPdf(false);
     }

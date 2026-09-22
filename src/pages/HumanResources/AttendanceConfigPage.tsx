@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
 import { firestore } from "@/firebase";
-import { doc, getDoc, setDoc, collection, getDocs, Timestamp, increment, serverTimestamp, runTransaction } from "firebase/firestore";
-import { updatePeriodSummaries, getStatusKey as getPeriodStatusKey } from "@/utils/periodSummaryUtils";
+import { doc, getDoc, setDoc, collection, getDocs } from "firebase/firestore";
 import Swal from "sweetalert2";
 import { RootState } from "../../store";
 import { Clock, Save, School, UserCheck, LogIn, LogOut, AlertCircle, Edit, UserX } from "lucide-react";
@@ -13,28 +12,12 @@ import { syncDailySummary } from "@/utils/periodSummaryUtils";
 import { getTodayString } from "@/utils/dateUtils";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
-import { calculateAttendanceBehaviorScoreChange } from "@/utils/behaviorScoreUtils";
-import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
-import { isStudyingStudent } from "@/utils/studentStatusUtils";
-import { isActiveTeacherSummaryStatus } from "@/utils/ownerStatsUtils";
 import SkeletonLoader from "@/components/SkeletonLoader";
+import { processDailyAttendanceGroup, getDailySummaryTotal } from "@/utils/attendanceDayProcessing";
 
-// Helper สำหรับแปลงสถานะเพื่ออัปเดตสถิติ
-// Helper สำหรับอัปเดต dyasummary (นักเรียน)
-// ใช้ getPeriodStatusKey จาก utils แทน getSummaryKey เดิมเพื่อลดความซ้ำซ้อน
-
-const getStatusKey = (status: string) => {
-  switch (status) {
-    case 'มา': return 'present';
-    case 'สาย': return 'late';
-    case 'ลา': return 'leave';
-    case 'ขาด': return 'absent';
-    case 'กลับก่อน': return 'early';
-    case 'ไม่ลงเวลาออก': return 'noCheckout';
-    default: return null;
-  }
-};
+// ประมวลผลย้อนหลังได้ครั้งละไม่เกินกี่วัน (แต่ละวันอ่านเอกสารลงเวลาของทุกคน — จำกัดไว้กันใช้เวลา/ค่าอ่านมากเกินไป)
+const MAX_BACKFILL_DAYS = 31;
 
 const TimeFieldSkeleton: React.FC = () => (
   <div className="space-y-1.5">
@@ -107,6 +90,12 @@ const AttendanceConfigPage: React.FC = () => {
   const schoolId = useEffectiveSchoolId();
 
   const [isLoading, setIsLoading] = useState(false);
+  // ช่วงวันที่ที่จะให้ "ประมวลผลประจำวัน" — ค่าเริ่มต้นคือวันนี้วันเดียว เลือกย้อนหลังเป็นช่วงได้
+  // (เช่น วันที่ไม่มีใครเปิดหน้าลงเวลาค้างไว้ตอนตัดรอบ หรือก่อนที่ระบบตัดขาดอัตโนมัติของครูจะเริ่มทำงาน)
+  const [processFrom, setProcessFrom] = useState<string>(() => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }));
+  const [processTo, setProcessTo] = useState<string>(() => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }));
+  // ปรับคนที่สแกนเข้าแต่ไม่สแกนออกเป็น "ไม่ลงเวลาออก" ด้วยหรือไม่ — ปิดไว้เป็นค่าเริ่มต้น (ตัดเฉพาะ "ขาด")
+  const [includeNoCheckout, setIncludeNoCheckout] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
@@ -128,6 +117,10 @@ const AttendanceConfigPage: React.FC = () => {
   const [teacherCheckoutEnd, setTeacherCheckoutEnd] = useState("18:00");
 
   const [enableSpeech, setEnableSpeech] = useState(true);
+  // ตัดขาดอัตโนมัติฝั่งเซิร์ฟเวอร์ (Cloud Function autoMarkAbsences) — ปิดไว้เป็นค่าเริ่มต้น ต้องเปิดเองที่หน้านี้
+  const [autoMarkAbsent, setAutoMarkAbsent] = useState(false);
+  // ผลการตัดขาดอัตโนมัติของวันนี้ (school-settings/{id}/attendance_auto_runs/{date})
+  const [autoRunToday, setAutoRunToday] = useState<any>(null);
   const [currentAcademicYear, setCurrentAcademicYear] = useState<string>("");
   const [behaviorScoreConfig, setBehaviorScoreConfig] = useState<any>(null);
 
@@ -169,8 +162,17 @@ const AttendanceConfigPage: React.FC = () => {
             setTeacherCheckoutStart(data.attendanceConfig.teacherCheckoutStart || "14:00");
             setTeacherCheckoutEnd(data.attendanceConfig.teacherCheckoutEnd || "18:00");
             setEnableSpeech(data.attendanceConfig.enableSpeech !== false); // Default to true
+            setAutoMarkAbsent(data.attendanceConfig.autoMarkAbsent === true);
           }
           setBehaviorScoreConfig(data.behaviorScoreConfig || null);
+        }
+
+        try {
+          const todayKey = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
+          const runSnap = await getDoc(doc(firestore, "school-settings", schoolId, "attendance_auto_runs", todayKey));
+          setAutoRunToday(runSnap.exists() ? runSnap.data() : null);
+        } catch (error) {
+          console.error("Error loading auto absence run:", error); // ไม่บล็อกหน้าตั้งค่า
         }
 
         // Fetch current academic year from calendar settings
@@ -239,37 +241,37 @@ const AttendanceConfigPage: React.FC = () => {
   const handleProcessAbsences = async () => {
     if (!schoolId) return;
 
-    // 1. ตรวจสอบวันหยุดและวันสอนชดเชยก่อน
-    setIsLoading(true);
-    let isHoliday = false;
-    let holidayMessage = "";
-    const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
+    const realTodayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
+    // ช่วงวันที่ที่เลือก (ห้ามเป็นอนาคต; ถ้าเลือกวันเดียวคือ "ประมวลผลของวันนั้น" เหมือนเดิม)
+    let rangeEnd = processTo && processTo <= realTodayStr ? processTo : realTodayStr;
+    let rangeStart = processFrom && processFrom <= rangeEnd ? processFrom : rangeEnd;
+    if (rangeStart > rangeEnd) rangeStart = rangeEnd;
+    const isRange = rangeStart !== rangeEnd;
 
+    // รายการวันที่ในช่วง (เป็นสตริงล้วน ไม่ผูกกับ timezone เครื่อง)
+    const allDates: string[] = [];
+    for (let cur = new Date(`${rangeStart}T00:00:00Z`), last = new Date(`${rangeEnd}T00:00:00Z`); cur <= last; cur.setUTCDate(cur.getUTCDate() + 1)) {
+      allDates.push(cur.toISOString().slice(0, 10));
+    }
+    if (allDates.length > MAX_BACKFILL_DAYS) {
+      await Swal.fire({
+        title: 'ช่วงวันที่ยาวเกินไป',
+        text: `ประมวลผลย้อนหลังได้ครั้งละไม่เกิน ${MAX_BACKFILL_DAYS} วัน (เลือกมา ${allDates.length} วัน) กรุณาแบ่งเป็นหลายรอบ`,
+        icon: 'warning',
+        confirmButtonText: 'ตกลง'
+      });
+      return;
+    }
+
+    // 1. ตรวจสอบวันหยุด/วันสอนชดเชย/ช่วงภาคเรียนจากปฏิทินโรงเรียน
+    setIsLoading(true);
+    let events: Record<string, any> = {};
+    let terms: any = null;
     try {
-      const calendarDocRef = doc(firestore, "school-settings", schoolId, "main_calendar", "default");
-      const calendarSnap = await getDoc(calendarDocRef);
-      let events: Record<string, any> = {};
+      const calendarSnap = await getDoc(doc(firestore, "school-settings", schoolId, "main_calendar", "default"));
       if (calendarSnap.exists()) {
         events = calendarSnap.data().events || {};
-      }
-
-      const todayEvent = events[todayStr];
-      const dayOfWeek = new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok', weekday: 'short' });
-      const isWeekend = dayOfWeek === 'Sat' || dayOfWeek === 'Sun';
-
-      // ตรวจสอบวันหยุด (รองรับการสอนชดเชย: type = 'schoolDay')
-      if (todayEvent) {
-        if (todayEvent.type === 'holiday' || todayEvent.type === 'specialHoliday') {
-          isHoliday = true;
-          holidayMessage = `วันนี้เป็น${todayEvent.type === 'holiday' ? 'วันหยุดราชการ' : 'วันหยุดกรณีพิเศษ'} (${todayEvent.description || '-'})`;
-        } else if (todayEvent.type === 'schoolDay') {
-          isHoliday = false; // เป็นวันสอนชดเชย หรือกิจกรรม
-        }
-      } else {
-        if (isWeekend) {
-          isHoliday = true;
-          holidayMessage = `วันนี้เป็นวันหยุดประจำสัปดาห์ (${dayOfWeek === 'Sat' ? 'วันเสาร์' : 'วันอาทิตย์'})`;
-        }
+        terms = calendarSnap.data().terms || null;
       }
     } catch (error) {
       console.error("Error checking calendar:", error);
@@ -277,184 +279,180 @@ const AttendanceConfigPage: React.FC = () => {
       setIsLoading(false);
     }
 
-    if (isHoliday) {
+    const termRanges = [terms?.term1, terms?.term2].filter((t) => t?.startDate && t?.endDate);
+    const isInTerm = (dateStr: string) =>
+      termRanges.length === 0 || termRanges.some((t: any) => dateStr >= t.startDate && dateStr <= t.endDate);
+
+    const eligibleDates: string[] = [];
+    const skippedDates: { date: string; reason: string }[] = [];
+    for (const dateStr of allDates) {
+      const event = events[dateStr];
+      const weekday = new Date(`${dateStr}T12:00:00+07:00`).toLocaleString('en-US', { timeZone: 'Asia/Bangkok', weekday: 'short' });
+      const isWeekend = weekday === 'Sat' || weekday === 'Sun';
+      let reason = '';
+      if (event?.type === 'holiday' || event?.type === 'specialHoliday') {
+        reason = `${event.type === 'holiday' ? 'วันหยุดราชการ' : 'วันหยุดกรณีพิเศษ'} (${event.description || '-'})`;
+      } else if (!event && isWeekend) {
+        reason = `วันหยุดประจำสัปดาห์ (${weekday === 'Sat' ? 'วันเสาร์' : 'วันอาทิตย์'})`;
+      } else if (isRange && event?.type !== 'schoolDay' && !isInTerm(dateStr)) {
+        // เฉพาะตอนประมวลผลหลายวัน: ข้ามช่วงปิดภาคเรียน ไม่ให้ตัดขาดทั้งโรงเรียนในวันที่ไม่มีการเรียนการสอน
+        reason = 'อยู่นอกช่วงภาคเรียน';
+      }
+      if (reason) skippedDates.push({ date: dateStr, reason });
+      else eligibleDates.push(dateStr);
+    }
+
+    if (eligibleDates.length === 0) {
       await Swal.fire({
         title: 'ไม่สามารถประมวลผลได้',
-        text: `${holidayMessage}\nระบบไม่อนุญาตให้ประมวลผลการขาดในวันหยุด (ยกเว้นมีการกำหนดเป็นวันเรียนชดเชย)`,
+        html: `ไม่มีวันที่ประมวลผลได้ในช่วงที่เลือก<br/><small>${skippedDates.map((d) => `${d.date}: ${d.reason}`).join('<br/>')}</small><br/>ระบบไม่อนุญาตให้ประมวลผลการขาดในวันหยุด (ยกเว้นมีการกำหนดเป็นวันเรียนชดเชย)`,
         icon: 'error',
         confirmButtonText: 'ตกลง'
       });
       return;
     }
 
+    const rangeLabel = isRange ? `${rangeStart} ถึง ${rangeEnd} (${eligibleDates.length} วันเรียน)` : rangeEnd;
+
+    // วันเดียว: ถ้ากลุ่มไหนไม่มีการลงเวลาเลยทั้งวัน (เช่น ไฟดับ/ระบบใช้ไม่ได้) การตัดขาดจะโดนทุกคนในกลุ่ม (และนักเรียนถูกหักคะแนน
+    // พฤติกรรมตามที่ตั้งไว้) จึงเตือนและให้เลือกว่าจะตัดต่อหรือข้ามกลุ่มนั้น — หลายวันจะข้ามกลุ่มแบบนี้ให้อัตโนมัติอยู่แล้ว
+    const emptyGroupNames = new Set<string>();
+    if (!isRange && eligibleDates.length === 1) {
+      try {
+        const [studentActivity, teacherActivity] = await Promise.all([
+          getDailySummaryTotal(schoolId, 'students', eligibleDates[0]),
+          getDailySummaryTotal(schoolId, 'teachers', eligibleDates[0]),
+        ]);
+        if (studentActivity <= 0) emptyGroupNames.add('students');
+        if (teacherActivity <= 0) emptyGroupNames.add('teachers');
+      } catch (error) {
+        console.error("Error checking daily activity:", error);
+      }
+    }
+    const emptyGroupLabels = [emptyGroupNames.has('students') ? 'นักเรียน' : '', emptyGroupNames.has('teachers') ? 'ครู' : ''].filter(Boolean).join(' และ ');
+
     const result = await Swal.fire({
       title: 'ประมวลผลการขาด?',
-      text: "ระบบจะตรวจสอบผู้ที่ยังไม่ลงเวลา (ขาด) และผู้ที่ลืมลงเวลาออก (ปรับเป็นไม่ลงเวลาออก) ทันที",
+      html: `ระบบจะตรวจสอบของวันที่ <b>${rangeLabel}</b><br/>ผู้ที่ยังไม่ลงเวลาเลย (ตัดเป็น <b>ขาด</b>)${includeNoCheckout ? ' และผู้ที่สแกนเข้าแต่ไม่สแกนออก (ปรับเป็น <b>ไม่ลงเวลาออก</b>)' : ''} ทั้งนักเรียนและครู` +
+        (isRange
+          ? `<br/><small>* ข้ามวันหยุด/นอกภาคเรียน และวันที่ไม่มีการลงเวลาของกลุ่มนั้นเลย, ไม่นับวันก่อนที่บุคคลนั้นเริ่มอยู่ในระบบ (วันที่เริ่มงาน/สร้างบัญชี)</small>`
+          : '') +
+        (emptyGroupLabels
+          ? `<br/><br/><b style="color:#ef4444">⚠️ วันที่ ${eligibleDates[0]} ไม่มีการลงเวลาของ${emptyGroupLabels}เลย</b><br/><small>(เช่น ไฟดับ/ระบบใช้ไม่ได้) ถ้าตัดต่อ จะตัดขาด<b>ทุกคน</b>ในกลุ่มนั้น (นักเรียนถูกหักคะแนนพฤติกรรมตามที่ตั้งไว้)</small>`
+          : ''),
       icon: 'warning',
       showCancelButton: true,
+      showDenyButton: emptyGroupNames.size > 0,
       confirmButtonColor: '#ef4444',
+      denyButtonColor: '#6b7280',
       cancelButtonColor: '#3085d6',
-      confirmButtonText: 'ยืนยัน, ประมวลผล',
+      confirmButtonText: emptyGroupNames.size > 0 ? 'ตัดขาดทุกคน' : 'ยืนยัน, ประมวลผล',
+      denyButtonText: 'ข้ามกลุ่มที่ไม่มีการลงเวลา',
       cancelButtonText: 'ยกเลิก'
     });
 
-    if (!result.isConfirmed) return;
+    if (!result.isConfirmed && !result.isDenied) return;
+    const skipEmptyGroups = result.isDenied;
 
     setIsLoading(true);
+    Swal.fire({
+      title: 'กำลังประมวลผล...',
+      html: '<div id="attendance-process-progress"></div>',
+      allowOutsideClick: false,
+      showConfirmButton: false,
+      didOpen: () => Swal.showLoading(),
+    });
+    const setProgress = (text: string) => {
+      const el = document.getElementById('attendance-process-progress');
+      if (el) el.textContent = text;
+    };
+
     try {
-      let count = 0;
-
       // เดิมฟังก์ชันนี้อ่านสถานะทุกคนก่อน แล้วค่อย commit batch เดียวรวมท้ายสุด — ถ้ามีนักเรียน/ครูสแกน
-      // เข้า-ออกจริงระหว่างที่ปุ่มนี้กำลังประมวลผลอยู่ (อาจกินเวลานานถ้าคนเยอะ) ตอน commit ท้ายสุดจะเขียนทับ
-      // ข้อมูลที่เพิ่งสแกนจริงกลับเป็น "ขาด"/"ไม่ลงเวลาออก" ได้ (TOCTOU) และถ้ากดปุ่มนี้ซ้ำ หรือกดพร้อมๆ กับที่
-      // ระบบสแกนหน้าประตูประมวลผลอัตโนมัติถึงเวลาตัดรอบพอดี ก็จะบวกตัวนับซ้ำสองไม่มีอะไรกันเลย
-      // ย้ายมาเป็นทรานแซกชันต่อคน ให้ทั้งการเช็คเงื่อนไขกับการเขียนเกิดขึ้นแบบ atomic จุดเดียวกัน
-      // ไม่ว่าจะกดปุ่มนี้ซ้ำกี่ครั้ง หรือรันพร้อมกับ auto-sweep ฝั่ง CheckinOutPage ก็ตาม
-      // ผลลัพธ์จะเหมือนกันเสมอ (idempotent) เพราะทรานแซกชันจะอ่านเห็นข้อมูลล่าสุดก่อนตัดสินใจทุกครั้ง
+      // เข้า-ออกจริงระหว่างที่ปุ่มนี้กำลังประมวลผลอยู่ ตอน commit ท้ายสุดจะเขียนทับข้อมูลที่เพิ่งสแกนจริงกลับเป็น
+      // "ขาด"/"ไม่ลงเวลาออก" ได้ (TOCTOU) และถ้ากดซ้ำหรือกดพร้อมระบบสแกนหน้าประตู ก็จะบวกตัวนับซ้ำ
+      // จึงประมวลผลเป็นทรานแซกชันต่อคน (ดู processDailyAttendanceGroup) ไม่ว่าจะกดกี่ครั้งผลก็เหมือนกัน (idempotent)
+      const groups: { name: 'students' | 'teachers'; label: string; users: any[] }[] = [
+        { name: 'students', label: 'นักเรียน', users: (await getDocs(collection(firestore, "school-settings", schoolId, "students"))).docs },
+        { name: 'teachers', label: 'ครู', users: (await getDocs(collection(firestore, "school-settings", schoolId, "teachers"))).docs },
+      ];
 
-      // ฟังก์ชันสำหรับประมวลผลรายกลุ่ม (นักเรียน/ครู)
-      const processGroup = async (collectionName: "students" | "teachers") => {
-        const usersRef = collection(firestore, "school-settings", schoolId, collectionName);
-        const usersSnap = await getDocs(usersRef);
-        const summaryRef = doc(firestore, "school-settings", schoolId, "students", "Attendance", "dyasummary", todayStr);
+      const perDay: { date: string; parts: string[] }[] = [];
+      let totalCount = 0;
 
-        for (const docSnap of usersSnap.docs) {
-          const data = docSnap.data();
-          if (collectionName === "teachers" && isAttendanceEntryOnly(data.role)) {
+      for (let i = 0; i < eligibleDates.length; i++) {
+        const dateStr = eligibleDates[i];
+        const parts: string[] = [];
+        // ปีการศึกษา: ใช้ปีปัจจุบันเมื่อวันนั้นอยู่ในช่วงภาคเรียนของปฏิทินปัจจุบัน ไม่งั้นให้ระบบคำนวณจากวันที่เอง
+        const academicYearForDay = isInTerm(dateStr) ? currentAcademicYear : undefined;
+
+        for (const group of groups) {
+          setProgress(`${dateStr} (${i + 1}/${eligibleDates.length}) — ${group.label}`);
+          if (skipEmptyGroups && emptyGroupNames.has(group.name)) {
+            parts.push(`${group.label}: ข้าม (วันนั้นไม่มีการลงเวลาเลย — ตามที่เลือกให้ข้าม)`);
             continue;
           }
-          // สำคัญ: ต้องข้ามคนที่ไม่ได้ "กำลังศึกษาอยู่"/"อยู่" (ย้าย/ลาออก/จบ/แขวนลอย ฯลฯ) ก่อนเสมอ
-          // ไม่งั้นปุ่มนี้จะไปสร้างสถานะ "ขาด" ให้คนที่ไม่ได้เรียน/ทำงานที่นี่แล้วด้วย ทำให้ยอดขาดและยอดรวม
-          // เพี้ยนเกินจำนวนคนที่ยังศึกษา/ปฏิบัติงานอยู่จริง (บั๊กที่เจอ — students collection เก็บประวัติ
-          // นักเรียนที่จบ/ย้าย/ลาออกไว้ด้วย ไม่ได้ลบทิ้ง)
-          if (collectionName === "students" && !isStudyingStudent(data)) continue;
-          if (collectionName === "teachers" && !isActiveTeacherSummaryStatus(data.status || "อยู่")) continue;
-
-          // ตรวจสอบเอกสารการลงเวลาของวันนี้ (Path: .../{collectionName}/{id}/attendance/{date})
-          const attendanceRef = doc(firestore, "school-settings", schoolId, collectionName, docSnap.id, "attendance", todayStr);
-          const userRef = doc(firestore, "school-settings", schoolId, collectionName, docSnap.id);
-
-          const didProcess = await runTransaction(firestore, async (transaction) => {
-            // สำคัญ: Firestore transaction ต้องอ่านให้ครบ (transaction.get) ก่อนเขียนทุกจุดเสมอ
-            // ห้ามสลับไปอ่าน userRef หลังจาก transaction.set/update ไปแล้ว ไม่งั้นจะโดน error
-            // "Firestore transactions require all reads to be executed before all writes."
-            const attendanceSnap = await transaction.get(attendanceRef);
-            const studentSnap = collectionName === "students" ? await transaction.get(userRef) : null;
-
-            if (!attendanceSnap.exists()) {
-              // ถ้าไม่มีเอกสาร ให้สร้างสถานะ "ขาด"
-              transaction.set(attendanceRef, {
-                status: "ขาด",
-                checkinTime: null,
-                checkoutTime: null,
-                timestamp: Timestamp.now(),
-                remark: "Auto-Absent by Admin"
-              });
-
-              if (collectionName === "students") {
-                const classKey = data.classLevel?.trim() || "ไม่ระบุชั้น";
-                transaction.set(summaryRef, {
-                  absent: increment(1),
-                  [`classes.${classKey}.absent`]: increment(1),
-                  updatedAt: serverTimestamp()
-                }, { merge: true });
-
-                const freshScore = studentSnap?.exists() ? Number(studentSnap.data().behaviorScore ?? data.behaviorScore ?? 100) : (data.behaviorScore ?? 100);
-                const result = calculateAttendanceBehaviorScoreChange({
-                  currentScore: freshScore,
-                  oldStatus: null,
-                  newStatus: "ขาด",
-                  config: behaviorScoreConfig,
-                });
-                if (result) {
-                  transaction.set(userRef, result.update, { merge: true });
-                }
-              }
-
-              // Update Period Summaries (Week, Month, Year, Semester)
-              // Previous status was likely null or undefined (since no attendance doc)
-              updatePeriodSummaries(firestore, transaction, schoolId, docSnap.id, collectionName, todayStr, null, "ขาด", collectionName === 'students' ? (data.classLevel?.trim() || "ไม่ระบุชั้น") : undefined, currentAcademicYear);
-
-              return true;
+          // วันนี้: ต้องรอให้สิ้นสุดเวลาลงเวลาออกของกลุ่มนั้นก่อน ไม่งั้นคนที่ยังอยู่ระหว่างวันจะถูกตัดขาด/ไม่ลงเวลาออกก่อนเวลา
+          if (dateStr === realTodayStr) {
+            const cutoff = group.name === 'students' ? studentCheckoutEnd : teacherCheckoutEnd;
+            const nowHm = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' });
+            if (cutoff && nowHm < cutoff) {
+              parts.push(`${group.label}: ข้าม (วันนี้ยังไม่สิ้นสุดเวลาลงเวลาออก ${cutoff})`);
+              continue;
             }
-
-            // กรณีมีเอกสารการลงเวลาแล้ว ตรวจสอบว่าลืมลงเวลาออกหรือไม่
-            const attData = attendanceSnap.data();
-            // เงื่อนไข: มีเวลาเข้า + ไม่มีเวลาออก + สถานะไม่ใช่ 'ลา', 'ขาด', หรือ 'ไม่ลงเวลาออก' อยู่แล้ว
-            if (attData.checkinTime && !attData.checkoutTime && attData.status !== "ลา" && attData.status !== "ขาด" && attData.status !== "ไม่ลงเวลาออก") {
-              const oldStatus = attData.status;
-              const newStatus = "ไม่ลงเวลาออก";
-
-              // อัปเดตสถานะเป็น "ไม่ลงเวลาออก"
-              transaction.update(attendanceRef, {
-                status: newStatus,
-                remark: "Auto-update: ไม่ลงเวลาออก"
-              });
-
-              // อัปเดตสถิติ (ลบสถานะเดิม บวกสถานะใหม่)
-              const oldKey = getStatusKey(oldStatus);
-              const newKey = getStatusKey(newStatus);
-
-              const statsUpdate: any = {};
-              if (oldKey) statsUpdate[`attendanceStats.${oldKey}`] = increment(-1);
-              if (newKey) statsUpdate[`attendanceStats.${newKey}`] = increment(1);
-
-              if (Object.keys(statsUpdate).length > 0) {
-                transaction.update(userRef, statsUpdate);
-              }
-
-              if (collectionName === "students") {
-                const freshScore = studentSnap?.exists() ? Number(studentSnap.data().behaviorScore ?? data.behaviorScore ?? 100) : (data.behaviorScore ?? 100);
-                const behaviorScoreChange = calculateAttendanceBehaviorScoreChange({
-                  currentScore: freshScore,
-                  oldStatus,
-                  newStatus,
-                  config: behaviorScoreConfig,
-                });
-                if (behaviorScoreChange) {
-                  transaction.set(userRef, behaviorScoreChange.update, { merge: true });
-                }
-
-                const classKey = data.classLevel?.trim() || "ไม่ระบุชั้น";
-                const oldSummaryKey = getPeriodStatusKey(oldStatus);
-                const newSummaryKey = getPeriodStatusKey(newStatus);
-                if (oldSummaryKey !== newSummaryKey) {
-                  const summaryUpdates: any = { updatedAt: serverTimestamp() };
-                  if (oldSummaryKey) {
-                    summaryUpdates[oldSummaryKey] = increment(-1);
-                    summaryUpdates[`classes.${classKey}.${oldSummaryKey}`] = increment(-1);
-                  }
-                  if (newSummaryKey) {
-                    summaryUpdates[newSummaryKey] = increment(1);
-                    summaryUpdates[`classes.${classKey}.${newSummaryKey}`] = increment(1);
-                  }
-                  transaction.set(summaryRef, summaryUpdates, { merge: true });
-                }
-              }
-
-              // Update Period Summaries (Week, Month, Year, Semester)
-              updatePeriodSummaries(firestore, transaction, schoolId, docSnap.id, collectionName, todayStr, oldStatus, newStatus, collectionName === 'students' ? (data.classLevel?.trim() || "ไม่ระบุชั้น") : undefined, currentAcademicYear);
-
-              return true;
+          }
+          if (isRange) {
+            // ย้อนหลังหลายวัน: ถ้าวันนั้นไม่มีการลงเวลาของกลุ่มนี้เลย (เช่น ยังไม่ได้ใช้ระบบ/ไม่มีใครสแกน) จะไม่ตัดขาดทั้งกลุ่ม
+            const total = await getDailySummaryTotal(schoolId, group.name, dateStr);
+            if (total <= 0) {
+              parts.push(`${group.label}: ข้าม (ไม่มีข้อมูลลงเวลาของวันนั้น)`);
+              continue;
             }
-
-            return false;
+          }
+          const res = await processDailyAttendanceGroup({
+            schoolId,
+            dateStr,
+            collectionName: group.name,
+            users: group.users,
+            behaviorScoreConfig,
+            academicYear: academicYearForDay,
+            skipBeforeJoinDate: isRange,
+            includeNoCheckout,
           });
-
-          if (didProcess) count++;
+          const changed = res.absent + res.noCheckout;
+          totalCount += changed;
+          // วันเดียว: แสดงรายละเอียดเสมอ (ตรวจกี่คน มีบันทึกแล้วกี่คน ใครถูกข้ามเพราะอะไร) จะได้ไล่สาเหตุได้ว่าทำไมบางคนไม่ถูกตัดขาด
+          // หลายวัน: แสดงเฉพาะวันที่มีการเปลี่ยนแปลง เพื่อไม่ให้ยาวเกินไป
+          if (changed > 0 || !isRange) {
+            const existingTotal = Object.values(res.existingByStatus).reduce((a, b) => a + b, 0);
+            const existingText = Object.entries(res.existingByStatus).map(([k, v]) => `${k} ${v}`).join(', ');
+            const namesText = res.absentNames.length > 0
+              ? ` [${res.absentNames.slice(0, 8).join(', ')}${res.absentNames.length > 8 ? ` และอีก ${res.absentNames.length - 8} คน` : ''}]`
+              : '';
+            const filteredText = res.filteredOut.length > 0
+              ? ` · ข้าม ${res.filteredOut.length} คน (${res.filteredOut.slice(0, 5).map((f) => `${f.name}: ${f.reason}`).join('; ')}${res.filteredOut.length > 5 ? ' …' : ''})`
+              : '';
+            parts.push(
+              `${group.label}: ตรวจ ${res.checked} คน · มีบันทึกแล้ว ${existingTotal}${existingText ? ` (${existingText})` : ''} · ตัดขาดใหม่ ${res.absent}${namesText}` +
+              `${res.noCheckout ? ` · ไม่ลงเวลาออก ${res.noCheckout}` : ''}${filteredText}`
+            );
+          }
         }
-      };
-
-      // ประมวลผลทั้งนักเรียนและครู
-      await processGroup("students");
-      await processGroup("teachers");
-
-      if (count > 0) {
-        Swal.fire("สำเร็จ", `ประมวลผลข้อมูล (ขาด/ไม่ลงเวลาออก) จำนวน ${count} รายการ`, "success");
-      } else {
-        Swal.fire("ข้อมูลครบถ้วน", "ไม่พบผู้ที่ยังไม่ลงเวลาในวันนี้", "info");
+        if (parts.length > 0) perDay.push({ date: dateStr, parts });
       }
 
+      const skippedHtml = skippedDates.length > 0
+        ? `<div style="margin-top:8px;font-size:12px;color:#888">ข้าม: ${skippedDates.map((d) => `${d.date} (${d.reason})`).join(', ')}</div>`
+        : '';
+      const detailHtml = perDay.length > 0
+        ? `<div style="text-align:left;font-size:13px;max-height:240px;overflow:auto">${perDay.map((d) => `<div><b>${d.date}</b> — ${d.parts.join(' | ')}</div>`).join('')}</div>`
+        : '';
+
+      if (totalCount > 0) {
+        Swal.fire({ title: 'สำเร็จ', html: `ประมวลผลข้อมูล (ขาด/ไม่ลงเวลาออก) จำนวน <b>${totalCount}</b> รายการ${detailHtml}${skippedHtml}`, icon: 'success' });
+      } else {
+        Swal.fire({ title: 'ไม่พบผู้ที่ต้องตัดขาด', html: `ไม่พบผู้ที่ยังไม่ลงเวลาในช่วงที่เลือก${detailHtml}${skippedHtml}`, icon: 'info' });
+      }
     } catch (error) {
       console.error("Error processing absences:", error);
       Swal.fire("Error", "เกิดข้อผิดพลาดในการประมวลผล", "error");
@@ -824,18 +822,129 @@ const AttendanceConfigPage: React.FC = () => {
             </div>
           </form>
 
-          <div className="mt-8 border-t border-gray-200 dark:border-gray-700 pt-8">
-            <div className="bg-red-50 dark:bg-red-900/10 p-6 rounded-2xl border border-red-100 dark:border-red-800/30">
+          <div className="mt-8 border-t border-gray-200 dark:border-gray-700 pt-8 space-y-6">
+            {/* ตัดขาดอัตโนมัติ (ฝั่งเซิร์ฟเวอร์) */}
+            <div className="bg-emerald-50 dark:bg-emerald-900/10 p-6 rounded-2xl border border-emerald-100 dark:border-emerald-800/30">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg">
+                    <UserX className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-800 dark:text-gray-200">ตัดขาดอัตโนมัติ</h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      ระบบตรวจและตัดสถานะ "ขาด" ให้เองทุกวัน ไม่ต้องกดปุ่มหรือเปิดหน้าลงเวลาค้างไว้
+                    </p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={autoMarkAbsent}
+                    onChange={async (e) => {
+                      const newValue = e.target.checked;
+                      setAutoMarkAbsent(newValue);
+                      if (!schoolId) return;
+                      try {
+                        await setDoc(doc(firestore, "school-settings", schoolId), {
+                          attendanceConfig: { autoMarkAbsent: newValue }
+                        }, { merge: true });
+                        Swal.fire({
+                          icon: 'success',
+                          title: newValue ? 'เปิดตัดขาดอัตโนมัติแล้ว' : 'ปิดตัดขาดอัตโนมัติแล้ว',
+                          toast: true,
+                          position: 'top-end',
+                          showConfirmButton: false,
+                          timer: 2000
+                        });
+                      } catch (err) {
+                        console.error("Error toggling auto absence:", err);
+                        setAutoMarkAbsent(!newValue); // Rollback on error
+                      }
+                    }}
+                    className="sr-only peer"
+                  />
+                  <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 dark:peer-focus:ring-emerald-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all dark:border-gray-600 peer-checked:bg-emerald-600"></div>
+                </label>
+              </div>
+              <ul className="mt-4 list-disc list-inside space-y-1 text-sm text-gray-600 dark:text-gray-300">
+                <li>คำนวณ<strong>ครั้งเดียวต่อวัน</strong> หลังสิ้นสุดการลงเวลาออกของทั้งนักเรียน ({studentCheckoutEnd}) และครู ({teacherCheckoutEnd}) — คือหลังเวลา <strong>{studentCheckoutEnd > teacherCheckoutEnd ? studentCheckoutEnd : teacherCheckoutEnd}</strong></li>
+                <li><strong>นักเรียนและครู</strong> ที่ไม่ลงเวลาทั้งเข้าและออกเลย → ตัดเป็น "ขาด"</li>
+                <li>ข้ามวันหยุด เสาร์-อาทิตย์ (ยกเว้นวันสอนชดเชย) และช่วงปิดภาคเรียนตามปฏิทินโรงเรียน</li>
+                <li>ข้ามกลุ่มที่ <strong>ทั้งวันไม่มีใครสแกนเลย</strong> (เช่น ไฟดับ/ระบบใช้ไม่ได้) เพื่อไม่ให้ตัดขาดทั้งโรงเรียนโดยไม่ตั้งใจ</li>
+                <li>คนที่ลา/ไปราชการที่อนุมัติแล้วจะไม่ถูกตัดขาดซ้ำ · ระบบเช็คทุก 15 นาทีหลัง 12:00 แต่ตัดรอบจริงวันละครั้ง</li>
+              </ul>
+              {autoMarkAbsent && (
+                <div className="mt-4 rounded-xl bg-white/70 dark:bg-black/20 px-4 py-3 text-sm text-gray-700 dark:text-gray-200">
+                  <p className="font-semibold mb-1">ผลของวันนี้</p>
+                  {autoRunToday ? (
+                    <ul className="space-y-0.5">
+                      {([['students', 'นักเรียน'], ['teachers', 'ครู']] as const).map(([key, label]) => {
+                        const g = autoRunToday[key];
+                        return (
+                          <li key={key}>
+                            {label}: {!g ? 'ยังไม่ถึงเวลา' : g.skipped ? `ข้าม — ${g.skipped}` : `ตรวจ ${g.checked ?? 0} คน · ตัดขาด ${g.marked ?? 0} คน`}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : (
+                    <p className="text-gray-500 dark:text-gray-400">ยังไม่มีการประมวลผลของวันนี้ (ระบบจะทำงานเมื่อถึงเวลาตัดรอบ)</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* เครื่องมือผู้ดูแล: ประมวลผลย้อนหลังด้วยมือ (ปกติไม่ต้องใช้) */}
+            <details className="group">
+              <summary className="cursor-pointer text-sm font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
+                เครื่องมือผู้ดูแล: ประมวลผลย้อนหลังด้วยมือ (ปกติไม่ต้องใช้)
+              </summary>
+            <div className="mt-4 bg-red-50 dark:bg-red-900/10 p-6 rounded-2xl border border-red-100 dark:border-red-800/30">
               <div className="flex items-center gap-3 mb-4">
                 <div className="p-2 bg-red-100 dark:bg-red-900/50 rounded-lg">
                   <UserX className="w-6 h-6 text-red-600 dark:text-red-400" />
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-gray-800 dark:text-gray-200">ประมวลผลประจำวัน (Manual)</h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">ตรวจสอบผู้ที่ "ขาด" และผู้ที่ "ไม่ลงเวลาออก" ในวันนี้ (ควรทำหลังสิ้นสุดเวลาลงเวลาออก)</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">ตรวจสอบผู้ที่ "ขาด" และผู้ที่ "ไม่ลงเวลาออก" (ควรทำหลังสิ้นสุดเวลาลงเวลาออก) — เลือกช่วงวันที่ย้อนหลังได้ (ครั้งละไม่เกิน 31 วัน) กรณีวันที่ระบบอัตโนมัติไม่ได้ทำงาน</p>
                 </div>
               </div>
               <div className="flex flex-col items-end gap-2">
+                <div className="flex flex-wrap items-center justify-end gap-2 text-sm text-gray-600 dark:text-gray-300">
+                  <span>ประมวลผลตั้งแต่วันที่</span>
+                  <input
+                    type="date"
+                    value={processFrom}
+                    max={processTo || undefined}
+                    onChange={(e) => {
+                      setProcessFrom(e.target.value);
+                      if (e.target.value > processTo) setProcessTo(e.target.value);
+                    }}
+                    className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-[#1e1f21] px-3 py-1.5 text-sm text-gray-800 dark:text-gray-100"
+                  />
+                  <span>ถึง</span>
+                  <input
+                    type="date"
+                    value={processTo}
+                    min={processFrom || undefined}
+                    max={new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" })}
+                    onChange={(e) => {
+                      setProcessTo(e.target.value);
+                      if (e.target.value < processFrom) setProcessFrom(e.target.value);
+                    }}
+                    className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-[#1e1f21] px-3 py-1.5 text-sm text-gray-800 dark:text-gray-100"
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeNoCheckout}
+                    onChange={(e) => setIncludeNoCheckout(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  ปรับคนที่สแกนเข้าแต่ไม่สแกนออกเป็น "ไม่ลงเวลาออก" ด้วย (ปกติไม่ต้องติ๊ก — จะเปลี่ยนสถานะมา/สายเดิมของบันทึกที่มีอยู่)
+                </label>
                 <button
                   type="button"
                   onClick={handleProcessAbsences}
@@ -846,11 +955,11 @@ const AttendanceConfigPage: React.FC = () => {
                   {isLoading ? "กำลังประมวลผล..." : "ประมวลผลทันที"}
                 </button>
                 <p className="text-xs text-gray-500 dark:text-gray-400 text-right">
-                  * ระบบมีฟังก์ชันประมวลผลอัตโนมัติเมื่อถึงเวลา {studentCheckoutEnd} (นักเรียน) และ {teacherCheckoutEnd} (ครู) <br />
-                  โดยต้องเปิดหน้าจอ "ลงเวลาเข้า-ออก" (Check-in/Out) ทิ้งไว้
+                  * ใช้กรณีต้องการตัดขาดย้อนหลังในวันที่ระบบอัตโนมัติไม่ได้ทำงาน (เช่น ก่อนเปิดใช้ หรือระบบขัดข้อง)
                 </p>
               </div>
             </div>
+            </details>
           </div>
           </div>
         </div>

@@ -7,6 +7,7 @@ import { firestore as db } from '@/firebase';
 import { collection, query, where, getDocs, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp, deleteField } from 'firebase/firestore';
 import { Document, Font, Image, Page, StyleSheet, Text, View, pdf, PDFViewer } from '@react-pdf/renderer';
 import { saveAs } from 'file-saver';
+import { archiveGeneratedPdf } from '@/utils/pdfArchiveUtils';
 import * as XLSX from 'xlsx';
 import {
     AlertTriangle,
@@ -48,6 +49,7 @@ import {
     calculateRemediationGrade,
     getMinistryRemediationGradeOptions,
 } from '@/utils/remediationUtils';
+import { getAssignmentTeacherIds } from '@/utils/learnerActivityUtils';
 import { showChoiceDialog } from '@/utils/swalChoiceDialog';
 
 Font.register({
@@ -667,7 +669,13 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                 const data: any = d.data();
                 if (selectedTermYear && String(data.academicYear) !== selectedTermYear) return;
                 if (selectedTermYear && selectedTermSemester && String(data.semester) !== selectedTermSemester) return;
-                (data.teacherAssignments || []).forEach((ta: any) => { if (ta.teacherId) teacherIds.push(ta.teacherId); });
+                // วิชาที่สอนคู่กัน/มีครูหลายคนในกลุ่มเดียวกัน (ta.teacherIds มีมากกว่า 1 คน) ให้นับเฉพาะ "ครูหลัก"
+                // (คนแรกในลำดับ) เท่านั้น — เดิมอ่านแค่ ta.teacherId (เดี่ยว) ซึ่งวิชาที่มีแต่ ta.teacherIds (อาเรย์)
+                // แบบใหม่จะหาครูรับผิดชอบไม่เจอเลย ใช้ getAssignmentTeacherIds ตัวเดียวกับหน้ามอบหมายรายวิชา
+                (data.teacherAssignments || []).forEach((ta: any) => {
+                    const mainTeacherId = getAssignmentTeacherIds(ta)[0];
+                    if (mainTeacherId) teacherIds.push(mainTeacherId);
+                });
             });
             teacherIds = Array.from(new Set(teacherIds));
             const teacherName = teacherIds
@@ -1299,9 +1307,30 @@ const ZeroRMsGradeReportPage: React.FC = () => {
 
     const handleExportPdf = async () => {
         setPdfGenerating(true);
+        const fileName = `ประกาศผลการเรียน_0_ร_มส_มผ.pdf`;
         try {
             const blob = await pdf(buildZeroRMsPdfDocument()).toBlob();
-            saveAs(blob, `ประกาศผลการเรียน_0_ร_มส_มผ.pdf`);
+            saveAs(blob, fileName);
+
+            // ประกาศผลการเรียนเป็นเอกสารทางการที่อาจถูกอ้างอิง/โต้แย้งภายหลัง — เก็บสำเนาไฟล์ ณ เวลาที่ออก
+            // ไว้ใน Storage พร้อมล็อกไว้ในทะเบียนประกาศ ถ้าเกรดถูกแก้ไขทีหลัง ยังเปิดดูฉบับที่เคยประกาศจริงได้
+            if (schoolId) {
+                try {
+                    const { url, storagePath } = await archiveGeneratedPdf(schoolId, "grade-announcements", blob, fileName);
+                    await addDoc(collection(db, "school-settings", schoolId, "grade-announcements"), {
+                        academicYear: selectedTermYear || null,
+                        semester: selectedTermSemester || null,
+                        classLevel: selectedClassLevel?.value || "all",
+                        studentCount: pdfStudents.length,
+                        pdfUrl: url,
+                        storagePath,
+                        createdBy: (currentUser as any)?.displayName || (currentUser as any)?.email || "ฝ่ายวิชาการ",
+                        createdAt: serverTimestamp(),
+                    });
+                } catch (archiveErr) {
+                    console.warn("Could not archive 0/ร/มส/มผ announcement PDF:", archiveErr);
+                }
+            }
         } catch (err) {
             console.error('Error exporting 0/ร/มส/มผ report PDF:', err);
             Swal.fire('สร้าง PDF ไม่สำเร็จ', 'ไม่สามารถสร้างไฟล์ PDF ได้ กรุณาลองใหม่อีกครั้ง', 'error');

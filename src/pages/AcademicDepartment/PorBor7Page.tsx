@@ -4,8 +4,9 @@ import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore, auth, storage } from "@/firebase";
-import { collection, getDocs, query, orderBy, doc, getDoc, where, addDoc, limit, Timestamp } from "firebase/firestore";
+import { collection, getDocs, query, orderBy, doc, getDoc, where, addDoc, updateDoc, limit, Timestamp } from "firebase/firestore";
 import { getBlob, ref as storageRef } from "firebase/storage";
+import { archiveGeneratedPdf } from "@/utils/pdfArchiveUtils";
 import { FaSearch, FaFilter, FaFileAlt, FaPrint } from "react-icons/fa";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, FileText, X, FileDown, Loader2 } from "lucide-react";
 import { getLevelsByRange, getGroupPersonnel } from "@/utils/schoolUtils";
@@ -239,7 +240,8 @@ const PorBor7Page: React.FC = () => {
   const [selectedRoom, setSelectedRoom] = useState<string>('');
   const [availableLevels, setAvailableLevels] = useState<string[]>([]);
   const [isExporting, setIsExporting] = useState<string | null>(null);
-  const [pdfPreview, setPdfPreview] = useState<{ document: React.ReactNode; fileName: string } | null>(null);
+  // certRef: เอกสารทะเบียน certificates ที่เพิ่งสร้างไว้ตอนพรีวิว — ใช้แนบ URL ไฟล์ PDF จริงกลับเข้าไปตอนกดดาวน์โหลด
+  const [pdfPreview, setPdfPreview] = useState<{ document: React.ReactNode; fileName: string; certRef?: ReturnType<typeof doc> | null } | null>(null);
   const [isDownloadingPreviewPdf, setIsDownloadingPreviewPdf] = useState(false);
 
   // Get school info from Redux
@@ -586,12 +588,12 @@ const PorBor7Page: React.FC = () => {
       );
 
       Swal.close();
-      setPdfPreview({ document: docToRender, fileName: `ใบรับรองเกรด_${student.firstName}_${student.lastName}.pdf` });
 
       const activeSchoolId = schoolId || reduxSchoolId;
+      let certRef: ReturnType<typeof doc> | null = null;
       if (activeSchoolId && config.refNo) {
         try {
-          await addDoc(collection(firestore, "school-settings", activeSchoolId, "certificates"), {
+          const created = await addDoc(collection(firestore, "school-settings", activeSchoolId, "certificates"), {
             certNo: config.refNo.trim(),
             subject: `หนังสือรับรองผลการเรียน (ปพ.7)`,
             certType: "ปพ.7 (ใบรับรองผลการศึกษา)",
@@ -602,10 +604,13 @@ const PorBor7Page: React.FC = () => {
             createdBy: auth.currentUser?.displayName || auth.currentUser?.email || "ฝ่ายวิชาการ",
             createdAt: Timestamp.now(),
           });
+          certRef = created;
         } catch (saveErr) {
           console.warn("Could not record certificate to registry:", saveErr);
         }
       }
+
+      setPdfPreview({ document: docToRender, fileName: `ใบรับรองเกรด_${student.firstName}_${student.lastName}.pdf`, certRef });
     } catch (error) {
       console.error("Error exporting grade PDF:", error);
       Swal.fire({
@@ -661,11 +666,10 @@ const PorBor7Page: React.FC = () => {
         />
       );
 
-      setPdfPreview({ document: docToRender, fileName: `ปพ7_${student.firstName}_${student.lastName}.pdf` });
-
+      let certRef: ReturnType<typeof doc> | null = null;
       if (activeSchoolId && data.refNo) {
         try {
-          await addDoc(collection(firestore, "school-settings", activeSchoolId, "certificates"), {
+          const created = await addDoc(collection(firestore, "school-settings", activeSchoolId, "certificates"), {
             certNo: data.refNo.trim(),
             subject: `หนังสือรับรองความประพฤติ/สภาพนักเรียน (ปพ.7)`,
             certType: "ปพ.7 (ใบรับรองสภาพการเป็นนักเรียน)",
@@ -676,10 +680,13 @@ const PorBor7Page: React.FC = () => {
             createdBy: auth.currentUser?.displayName || auth.currentUser?.email || "ฝ่ายวิชาการ",
             createdAt: Timestamp.now(),
           });
+          certRef = created;
         } catch (saveErr) {
           console.warn("Could not record certificate to registry:", saveErr);
         }
       }
+
+      setPdfPreview({ document: docToRender, fileName: `ปพ7_${student.firstName}_${student.lastName}.pdf`, certRef });
     } catch (error) {
       console.error("Failed to generate PDF:", error);
       Swal.fire({
@@ -700,6 +707,18 @@ const PorBor7Page: React.FC = () => {
     try {
       const blob = await pdf(pdfPreview.document as any).toBlob();
       saveAs(blob, pdfPreview.fileName);
+
+      // เก็บสำเนาไฟล์ที่ออกจริง ณ ตอนนี้ไว้ใน Storage แล้วแนบ URL กลับเข้าไปในทะเบียน certificates —
+      // ถ้าข้อมูลนักเรียน/เกรดถูกแก้ไขภายหลัง ยังเปิดดูฉบับที่เคยออกจริงได้ ไม่ใช่ฉบับที่ generate ใหม่จากข้อมูลปัจจุบัน
+      const activeSchoolId = schoolId || reduxSchoolId;
+      if (activeSchoolId && pdfPreview.certRef) {
+        try {
+          const { url, storagePath } = await archiveGeneratedPdf(activeSchoolId, "certificates", blob, pdfPreview.fileName);
+          await updateDoc(pdfPreview.certRef, { pdfUrl: url, storagePath });
+        } catch (archiveErr) {
+          console.warn("Could not archive certificate PDF:", archiveErr);
+        }
+      }
     } finally {
       setIsDownloadingPreviewPdf(false);
     }

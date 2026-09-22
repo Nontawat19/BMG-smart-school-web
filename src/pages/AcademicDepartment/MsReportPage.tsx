@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useSelector } from 'react-redux';
+import { Link } from 'react-router-dom';
+import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '@/store';
+import { fetchTeachersMap } from '@/store/slices/userMapSlice';
+import { getMainTeacherForCourseTerm } from '@/utils/remediationUtils';
 import MainLayout from "@/layouts/MainLayout";
 import { firestore as db } from '@/firebase';
 import {
@@ -22,7 +25,6 @@ import {
     Users,
     BookOpen,
     Loader2,
-    User,
     AlertCircle,
     Download,
     RefreshCw,
@@ -33,6 +35,7 @@ import {
     ShieldCheck
 } from 'lucide-react';
 import BackButton from "@/components/Shared/BackButton";
+import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import SkeletonLoader from '@/components/SkeletonLoader';
 import Select from 'react-select';
 import { CLASSES, CLASS_FULL_NAMES, getGroupPersonnel, getClassLevelRank } from '@/utils/schoolUtils';
@@ -42,6 +45,7 @@ import { getCurrentThaiYear } from '@/utils/dateUtils';
 import { getCurrentAcademicYear } from '@/utils/academicYearUtils';
 import { classifyLeaveSubType } from '@/utils/periodSummaryUtils';
 import { isPrimaryClassValue, computeCourseAttendanceEligibilityForRoster } from '@/utils/attendanceEligibilityFirestore';
+import { isStudyingStudent } from '@/utils/studentStatusUtils';
 import type { AttendanceEligibilityResult } from '@/utils/attendanceEligibility';
 
 Font.register({
@@ -94,6 +98,8 @@ interface StudentStats {
     remark?: string;
     isWaived?: boolean;
     waiverReason?: string;
+    profileImageUrl?: string;
+    profileImageThumbUrl?: string;
 }
 
 const toDate = (value: any): Date | null => {
@@ -163,6 +169,19 @@ const getCourseClassLabel = (course?: Course | null) => {
 };
 
 // เทียบว่า classId ของวิชาตรงกับระดับชั้นที่กรองหรือไม่ (รองรับทั้งชั้นเดี่ยวและช่วงชั้นรวม)
+// เช็คว่าวิชานี้เปิดสอนให้ห้องที่เลือกหรือไม่ — วิชาที่ไม่ได้ระบุห้อง (room ว่าง/ไม่มีฟิลด์) ถือว่าเปิดให้ทุกห้อง
+// ของระดับชั้นนั้น (พฤติกรรมเดิมก่อนมีตัวกรองนี้) เพื่อไม่ให้วิชาเก่าที่ไม่เคยระบุห้องหายไปจากรายการ
+const matchesRoomFilter = (courseRoom: unknown, selectedRoomValue: string): boolean => {
+    if (!selectedRoomValue || selectedRoomValue === 'all') return true;
+    const rooms = Array.isArray(courseRoom) ? courseRoom : (courseRoom ? [courseRoom] : []);
+    if (rooms.length === 0) return true;
+    const target = String(selectedRoomValue).trim().toLowerCase();
+    return rooms.some(r => {
+        const normalized = String(r).trim().toLowerCase();
+        return normalized === 'all' || normalized === target;
+    });
+};
+
 const matchesClassLevel = (courseClassId: string | string[] | undefined, selectedValue: string): boolean => {
     if (selectedValue === 'all') return true;
     if (!courseClassId) return false;
@@ -414,6 +433,11 @@ const MsReportPage: React.FC = () => {
     const schoolSettings = useSelector((state: RootState) => state.schoolSettings);
     const calendarState = useSelector((state: RootState) => state.calendar);
     const reduxAcademicYear = calendarState.academicYear || String(getCurrentThaiYear());
+    const dispatch = useDispatch();
+    const teacherMap = useSelector((state: RootState) => (state as any).userMap?.teachers || {});
+    useEffect(() => {
+        if (schoolId) dispatch(fetchTeachersMap(schoolId) as any);
+    }, [schoolId, dispatch]);
 
     const [loading, setLoading] = useState(false);
     const [pdfGenerating, setPdfGenerating] = useState(false);
@@ -426,7 +450,7 @@ const MsReportPage: React.FC = () => {
     const [courses, setCourses] = useState<Course[]>([]);
     const [selectedClassLevel, setSelectedClassLevel] = useState<any>(() => {
         const saved = sessionStorage.getItem('ms_classLevel');
-        return saved ? JSON.parse(saved) : { value: 'all', label: 'ทุกระดับชั้น' };
+        return saved ? JSON.parse(saved) : { value: 'all', label: 'เลือกระดับชั้น' };
     });
     const [selectedCourse, setSelectedCourse] = useState<any>(() => {
         const saved = sessionStorage.getItem('ms_course');
@@ -434,10 +458,13 @@ const MsReportPage: React.FC = () => {
     });
     const [selectedRoom, setSelectedRoom] = useState<any>(() => {
         const saved = sessionStorage.getItem('ms_room');
-        return saved ? JSON.parse(saved) : { value: 'all', label: 'ทุกห้องเรียน' };
+        return saved ? JSON.parse(saved) : { value: 'all', label: 'เลือกห้อง' };
     });
 
     const [studentsInCourse, setStudentsInCourse] = useState<any[]>([]);
+    // จำนวนรายการลงทะเบียนเรียนที่หาเอกสารนักเรียนจริงไม่เจอ (studentId ว่าง หรือเอกสารนักเรียนถูกลบ/ย้ายไปแล้ว)
+    // — แถวเหล่านี้จะไม่มีทางได้เลขที่/รหัสนักเรียนเลย ไม่ว่าจะไปจัดเลขที่ที่หน้ารายชื่อนักเรียนกี่ครั้งก็ตาม
+    const [staleEnrollmentCount, setStaleEnrollmentCount] = useState(0);
     const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
     const [leaveMap, setLeaveMap] = useState<Record<string, LeavePeriod[]>>({});
     // ผลตัดสิน "มส." จริงที่ใช้แสดงในระบบทั้งหมด (สมุดพก, my-grade-flags, หน้าคำร้องขอแก้ตัว) มาจาก
@@ -447,6 +474,9 @@ const MsReportPage: React.FC = () => {
     // ตัวเลขแยกรายละเอียด (สาย/ลาป่วย/ลากิจ/ขาด/หนี) ในตารางยังคงนับจากประวัติเช็คชื่อสดเหมือนเดิมเพื่อดูบริบท
     const [authoritativeGrades, setAuthoritativeGrades] = useState<Record<string, { status?: string; grade?: string; remark?: string }>>({});
     const [assignedCourseIds, setAssignedCourseIds] = useState<Set<string>>(new Set());
+    // รายการมอบหมายครูของแต่ละวิชา (จาก course_assignments) — ใช้หา "ครูหลัก" ที่จะเซ็นชื่อในเอกสาร มส. แทนที่
+    // จะใช้ชื่อผู้ใช้ที่ล็อกอินอยู่ตรงๆ (วิชาที่สอนคู่กัน/มีครูหลายคน ต้องแสดงครูหลักเสมอ ไม่ใช่ครูร่วมสอนทุกคน)
+    const [assignmentsByCourseId, setAssignmentsByCourseId] = useState<Record<string, any[]>>({});
     const [error, setError] = useState<string | null>(null);
 
     // ร้อยละเวลาเรียนสด ๆ ต่อนักเรียน คำนวณจากตารางสอนจริงของวิชานี้ (จำนวนคาบ/สัปดาห์ตามตารางสอนจริง
@@ -571,6 +601,7 @@ const MsReportPage: React.FC = () => {
     useEffect(() => {
         if (!schoolId || !academicYear || !semester) {
             setAssignedCourseIds(new Set());
+            setAssignmentsByCourseId({});
             return;
         }
         const assignmentRef = collection(db, 'school-settings', schoolId, 'course_assignments');
@@ -581,14 +612,21 @@ const MsReportPage: React.FC = () => {
         );
         getDocs(q).then(snap => {
             const ids = new Set<string>();
+            const byCourse: Record<string, any[]> = {};
             snap.docs.forEach(d => {
-                const courseId = (d.data() as any).courseId;
-                if (courseId) ids.add(String(courseId));
+                const data = d.data() as any;
+                const courseId = data.courseId;
+                if (!courseId) return;
+                ids.add(String(courseId));
+                if (!byCourse[courseId]) byCourse[courseId] = [];
+                byCourse[courseId].push(data);
             });
             setAssignedCourseIds(ids);
+            setAssignmentsByCourseId(byCourse);
         }).catch(err => {
             console.error('Error fetching course assignments:', err);
             setAssignedCourseIds(new Set());
+            setAssignmentsByCourseId({});
         });
     }, [schoolId, academicYear, semester]);
 
@@ -605,7 +643,7 @@ const MsReportPage: React.FC = () => {
     const classLevelOptions = useMemo(() => {
         const availableClassOptions = schoolSettings?.availableClassOptions || [];
         const classKeys: string[] = schoolSettings?.classKeys || [];
-        const options: { value: string; label: string }[] = [{ value: 'all', label: 'ทุกระดับชั้น' }];
+        const options: { value: string; label: string }[] = [{ value: 'all', label: 'เลือกระดับชั้น' }];
 
         availableClassOptions.forEach(([key, label]) => {
             options.push({ value: key, label });
@@ -622,9 +660,10 @@ const MsReportPage: React.FC = () => {
     }, [schoolSettings]);
 
     const courseOptions = useMemo(() => {
-        const filtered = selectedClassLevel && selectedClassLevel.value !== 'all'
-            ? eligibleCourses.filter(c => matchesClassLevel(c.classId, selectedClassLevel.value))
-            : eligibleCourses;
+        const filtered = eligibleCourses.filter(c =>
+            matchesClassLevel(c.classId, selectedClassLevel?.value || 'all')
+            && matchesRoomFilter((c as any).room, selectedRoom?.value || 'all')
+        );
 
         // เรียงตามระดับชั้นก่อน แล้วจึงเรียงตามรหัสวิชาในแต่ละชั้น
         const sorted = [...filtered].sort((a, b) => {
@@ -644,21 +683,32 @@ const MsReportPage: React.FC = () => {
             if (!isStillValid) setSelectedCourse(PLACEHOLDER_COURSE_OPTION);
         }
         return options;
-    }, [eligibleCourses, selectedClassLevel, selectedCourse]);
+    }, [eligibleCourses, selectedClassLevel, selectedRoom, selectedCourse]);
 
     const selectedCourseData = useMemo(
         () => courses.find(c => c.code === selectedCourse?.value) || null,
         [courses, selectedCourse]
     );
 
+    // ชื่อ "ครูหลัก" ของวิชาที่เลือก ดึงจากหน้ามอบหมายรายวิชา (course-assignment) — วิชาที่สอนคู่กัน/มีครูสอน
+    // หลายคนในกลุ่มเดียวกัน ให้ใช้ครูคนแรกตามลำดับที่มอบหมายไว้เสมอ (ไม่ใช่ครูร่วมสอนทุกคน และไม่ใช่ชื่อผู้ใช้
+    // ที่ล็อกอินอยู่ตรงๆ ซึ่งอาจเป็นฝ่ายวิชาการที่กดออกรายงานแทนก็ได้) ใช้ฟังก์ชันเดียวกับหน้ารายงาน 0/ร/มส/มผ
+    const mainTeacherName = useMemo(() => {
+        if (!selectedCourseData?.id || !academicYear || !semester) return '';
+        const result = getMainTeacherForCourseTerm(assignmentsByCourseId, selectedCourseData.id, academicYear, semester, teacherMap);
+        return result.id ? result.name : '';
+    }, [assignmentsByCourseId, selectedCourseData, academicYear, semester, teacherMap]);
+
     const handleFetchData = async () => {
         if (!schoolId || !academicYear || !semester || !selectedCourse?.value) {
             setStudentsInCourse([]);
             setAttendanceRecords([]);
+            setStaleEnrollmentCount(0);
             return;
         }
         setLoading(true);
         setError(null);
+        setStaleEnrollmentCount(0);
         try {
             const enrollRef = collection(db, 'school-settings', schoolId, 'enrollments');
             const enrollQ = query(
@@ -685,18 +735,33 @@ const MsReportPage: React.FC = () => {
                     number: getNo(d),
                     classLevel: d.classLevel || '',
                     room: d.room || '',
+                    status: '' as string,
+                    profileImageUrl: '' as string,
+                    profileImageThumbUrl: '' as string,
                 };
             });
 
-            const studentIds = enrollmentStudents.map(s => s.id);
+            // เลขที่/รหัสนักเรียนที่แสดงในหน้านี้ "อิงจากข้อมูลนักเรียนต้นทาง" (หน้ารายชื่อนักเรียน /school/{id}/students
+            // ซึ่งเป็นที่เดียวที่ตั้งค่า studentNumber ผ่านปุ่ม "จัดเลขที่") ไม่ใช่จากเอกสารลงทะเบียนเรียน (enrollments)
+            // ที่ไม่ได้เก็บสองฟิลด์นี้ไว้เลย — ต้อง query กลับไปที่ students เสมอ (deep sync ด้านล่าง)
+            const studentIds = Array.from(new Set(enrollmentStudents.map(s => s.id).filter(Boolean)));
+            // เอกสารลงทะเบียนเรียนที่ studentId ว่าง/ไม่ครบ ไม่มีทางแม็ตช์กับนักเรียนคนไหนได้เลย — บันทึกจำนวนไว้
+            // แจ้งเตือนแอดมิน (ข้อมูลลงทะเบียนเรียนเสีย ต้องไปแก้ที่ต้นตอ ไม่ใช่ปัญหาที่ "เลขที่" นักเรียน)
+            const orphanedEnrollmentCount = enrollmentStudents.length - studentIds.length;
+            const unmatchedIds = new Set(studentIds);
+
             if (studentIds.length > 0) {
-                try {
-                    const batchSize = 30;
-                    const studentsRef = collection(db, 'school-settings', schoolId, 'students');
-                    for (let i = 0; i < studentIds.length; i += batchSize) {
-                        const batch = studentIds.slice(i, i + batchSize);
+                const batchSize = 30;
+                const studentsRef = collection(db, 'school-settings', schoolId, 'students');
+                for (let i = 0; i < studentIds.length; i += batchSize) {
+                    const batch = studentIds.slice(i, i + batchSize);
+                    // try/catch ต่อชุด (ไม่ใช่ครอบทั้งลูป) — เดิมถ้าชุดใดชุดหนึ่ง error (เช่น เจอ id ที่พัง) จะทำให้
+                    // ทุกชุดที่เหลือไม่ถูกประมวลผลเลย นักเรียนทั้งวิชาจึงเห็นเลขที่/รหัสว่างพร้อมกันหมดทั้งที่จริงๆ
+                    // ข้อมูลต้นทางที่หน้ารายชื่อนักเรียนมีครบ — แยกชุดแล้ว หนึ่งชุดพังไม่กระทบชุดอื่น
+                    try {
                         const sSnap = await getDocs(query(studentsRef, where('__name__', 'in', batch)));
                         sSnap.forEach(sDoc => {
+                            unmatchedIds.delete(sDoc.id);
                             const sData = sDoc.data();
                             const student = enrollmentStudents.find(s => s.id === sDoc.id);
                             if (student) {
@@ -711,15 +776,28 @@ const MsReportPage: React.FC = () => {
                                 if (actualCode) {
                                     student.studentCode = String(actualCode).trim();
                                 }
+                                // เก็บสถานะนักเรียนไว้กรองด้านล่าง — รายการลงทะเบียนเรียนเก่าอาจค้างของนักเรียนที่
+                                // ย้าย/ลาออก/จบไปแล้ว (collection students ไม่ได้ลบทิ้งเมื่อเปลี่ยนสถานะ)
+                                student.status = sData.status || sData.studentStatus || '';
+                                student.profileImageUrl = sData.profileImageUrl || '';
+                                student.profileImageThumbUrl = sData.profileImageThumbUrl || '';
                             }
                         });
+                    } catch (err) {
+                        console.error(`Error deep syncing student data (batch ${i}-${i + batch.length}):`, err);
                     }
-                } catch (err) {
-                    console.error('Error deep syncing student data:', err);
                 }
             }
 
-            setStudentsInCourse(enrollmentStudents);
+            // นักเรียนที่ลงทะเบียนไว้แต่หาเอกสารนักเรียนจริงไม่เจอ (ย้าย/ลบไปแล้ว แต่ enrollment เก่ายังอยู่) —
+            // ทั้ง orphaned enrollment และ unmatched id ทำให้แถวนั้นไม่มีทางได้เลขที่/รหัส ไม่ว่าจะจัดเลขที่ที่
+            // หน้ารายชื่อนักเรียนกี่ครั้งก็ตาม ต้องแยกให้แอดมินเห็นว่าเป็นข้อมูลลงทะเบียนเรียนเสีย ไม่ใช่ปัญหาเลขที่
+            setStaleEnrollmentCount(orphanedEnrollmentCount + unmatchedIds.size);
+
+            // แสดงเฉพาะนักเรียนที่สถานะ "กำลังศึกษาอยู่" — รายการลงทะเบียนเรียนของนักเรียนที่ย้าย/ลาออก/จบไปแล้ว
+            // (หรือที่หาเอกสารนักเรียนไม่เจอเลย จึงไม่รู้สถานะ) จะถูกซ่อนจากรายงาน มส. นี้ไปด้วย
+            const activeStudents = enrollmentStudents.filter(s => isStudyingStudent({ status: s.status }));
+            setStudentsInCourse(activeStudents);
 
             // ผลตัดสิน "มส." ที่แท้จริง — อ่านจาก courses/{courseId}/grades ที่หน้าเช็คชื่อรายวิชาคำนวณไว้แล้ว
             // (ดูคอมเมนต์ตรง useState ด้านบน) ต้อง resolve courseId จาก courseCode ที่เลือกไว้เอง เพราะหน้านี้
@@ -821,6 +899,7 @@ const MsReportPage: React.FC = () => {
             setLeaveMap(newLeaveMap);
         } catch (err: any) {
             console.error('Error fetching data:', err);
+            setStaleEnrollmentCount(0);
             if (err.code === 'failed-precondition' || err.message?.includes('index')) {
                 setError('ระบบต้องการการตั้งค่าดัชนี (Index) กรุณาคลิกลิงก์ใน Console เพื่อสร้าง Index');
             } else {
@@ -845,7 +924,7 @@ const MsReportPage: React.FC = () => {
         const combinedRooms = new Set([...fixedRooms, ...Array.from(activeRooms)]);
         const sortedList = Array.from(combinedRooms).sort((a, b) => Number(a) - Number(b));
         return [
-            { value: 'all', label: 'ทุกห้องเรียน' },
+            { value: 'all', label: 'เลือกห้อง' },
             ...sortedList.map(r => ({ value: r, label: `ห้อง ${r}` }))
         ];
     }, [studentsInCourse]);
@@ -862,6 +941,8 @@ const MsReportPage: React.FC = () => {
                 number: s.number,
                 classLevel: s.classLevel,
                 room: s.room,
+                profileImageUrl: s.profileImageUrl,
+                profileImageThumbUrl: s.profileImageThumbUrl,
                 late: 0,
                 sick: 0,
                 personal: 0,
@@ -1115,7 +1196,7 @@ const MsReportPage: React.FC = () => {
                 semester={semester}
                 classLabel={classLabelDisplay}
                 subjectLabel={subjectLabel}
-                signerName={String((currentUser as any)?.fullName || '').trim()}
+                signerName={mainTeacherName || String((currentUser as any)?.fullName || '').trim()}
                 academicHeadName={academicHeadName}
                 academicHeadRoleLabel={academicHeadRoleLabel}
             />
@@ -1222,6 +1303,14 @@ const MsReportPage: React.FC = () => {
                         {selectedCourseData && (
                             <p className="mt-3 ml-1 text-[11px] font-bold text-gray-400 dark:text-gray-500">
                                 ระดับชั้น {classLabelDisplay} • หน่วยกิต {selectedCourseData.credits ?? '-'} • ผล มส. อ้างอิงจากระบบเช็คชื่อรายวิชาโดยตรง • คิดร้อยละจากตารางสอนจริง{liveScopeLabel ? ` (${liveScopeLabel})` : ''}
+                                {mainTeacherName && (
+                                    <>
+                                        {' • '}
+                                        <span title="วิชาที่สอนคู่กัน/มีครูสอนหลายคน แสดงครูหลักคนแรกตามลำดับที่มอบหมายไว้ในหน้ามอบหมายรายวิชา">
+                                            ครูผู้สอนหลัก: {mainTeacherName}
+                                        </span>
+                                    </>
+                                )}
                             </p>
                         )}
                     </div>
@@ -1277,6 +1366,34 @@ const MsReportPage: React.FC = () => {
                                 </div>
                             )}
 
+                            {(() => {
+                                // นักเรียนที่ยังไม่มี "เลขที่" — เลขที่มาจากข้อมูลนักเรียนต้นทาง (หน้ารายชื่อนักเรียน)
+                                // ไม่ใช่จากการลงทะเบียนเรียน จึงต้องไปจัดที่หน้านั้น ไม่ใช่แก้ในหน้ารายงานนี้
+                                const missingNumberCount = studentsInCourse.filter(s => !s.number).length;
+                                if (missingNumberCount === 0 && staleEnrollmentCount === 0) return null;
+                                return (
+                                    <div className="bg-amber-50 border border-amber-100 dark:bg-amber-500/10 dark:border-amber-500/20 text-amber-700 dark:text-amber-400 p-4 rounded-xl flex items-start gap-3">
+                                        <AlertCircle size={20} className="shrink-0 mt-0.5" />
+                                        <div className="text-sm space-y-1">
+                                            {missingNumberCount > 0 && (
+                                                <p className="font-bold">
+                                                    นักเรียน {missingNumberCount} คนในวิชานี้ยังไม่มี "เลขที่" — เลขที่ดึงมาจากข้อมูลนักเรียนที่หน้า{' '}
+                                                    <Link to={`/school/${schoolId}/students`} className="underline font-black hover:text-amber-900 dark:hover:text-amber-200">
+                                                        รายชื่อนักเรียน
+                                                    </Link>{' '}
+                                                    ไปกดปุ่ม "อัพเดทเลขที่" ที่หน้านั้น หรือกรอกเลขที่รายคนที่หน้าแก้ไขนักเรียน
+                                                </p>
+                                            )}
+                                            {staleEnrollmentCount > 0 && (
+                                                <p className="font-bold">
+                                                    พบรายการลงทะเบียนเรียน {staleEnrollmentCount} รายการที่หาเอกสารนักเรียนจริงไม่เจอ (อาจเป็นนักเรียนที่ถูกลบ/ย้ายไปแล้วแต่ยังมีรายการลงทะเบียนเก่าค้างอยู่) รายการเหล่านี้จะไม่มีเลขที่/รหัสนักเรียนไม่ว่าจะจัดเลขที่กี่ครั้งก็ตาม ควรตรวจสอบที่หน้าจัดการรายวิชา
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
                             <div className="bg-white dark:bg-[#1a1b1e] rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
                                 {loading ? (
                                     <div className="p-8 space-y-6">
@@ -1321,9 +1438,14 @@ const MsReportPage: React.FC = () => {
                                                             </td>
                                                             <td className="px-4 py-4">
                                                                 <div className="flex items-center gap-3">
-                                                                    <div className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all ${isWaived ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 shadow-sm' : isMS ? 'bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400 shadow-sm' : 'bg-gray-100 dark:bg-white/5 text-gray-400 group-hover:bg-indigo-600 group-hover:text-white'}`}>
-                                                                        {isWaived ? <ShieldCheck size={18} /> : <User size={18} />}
-                                                                    </div>
+                                                                    {/* รูปโปรไฟล์วงกลม — ครอปเยื้องขึ้นบน (object-[center_20%]) กันศีรษะ/หน้าล้นกรอบ เหมือนที่ใช้กับ
+                                                                    รูปโปรไฟล์ทั่วระบบ (ProfileAvatar) ขอบสีเปลี่ยนตามผล มส./ผ่อนผัน แทนไอคอนเดิม */}
+                                                                    <ProfileAvatar
+                                                                        className={`h-9 w-9 ring-2 transition-all ${isWaived ? 'ring-emerald-400 dark:ring-emerald-500' : isMS ? 'ring-rose-400 dark:ring-rose-500' : 'ring-gray-200 dark:ring-white/10 group-hover:ring-indigo-400'}`}
+                                                                        src={s.profileImageUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(s.name || '?')}&background=random`}
+                                                                        thumbSrc={s.profileImageThumbUrl}
+                                                                        alt={s.name}
+                                                                    />
                                                                     <div className="min-w-0">
                                                                         <div className="flex items-center gap-2">
                                                                             <p className={`text-[13px] font-bold truncate ${isWaived ? 'text-emerald-600 dark:text-emerald-400' : isMS ? 'text-rose-600 dark:text-rose-400' : 'text-gray-900 dark:text-white'}`}>{s.name}</p>

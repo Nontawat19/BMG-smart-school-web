@@ -19,6 +19,7 @@ import {
 import { FaFilePdf, FaSearch, FaEdit } from 'react-icons/fa';
 import { pdf } from '@react-pdf/renderer';
 import Swal from 'sweetalert2';
+import { archiveGeneratedPdf } from '@/utils/pdfArchiveUtils';
 import TeacherLeaveRequestPdfDocument from '@/components/Pdf/leave/TeacherLeaveRequestPdfDocument';
 import MainLayout from "@/layouts/MainLayout";
 import SkeletonLoader from '@/components/SkeletonLoader';
@@ -304,15 +305,27 @@ const TeacherLeaveHistoryPage: React.FC = () => {
 
       const docToRender = <TeacherLeaveRequestPdfDocument data={dataForPdf} today={today} />;
       const blob = await pdf(docToRender).toBlob();
+      const fileName = `ใบลา-${r.teacherName}.pdf`;
       const url = URL.createObjectURL(blob);
 
       const link = document.createElement('a');
       link.href = url;
-      link.download = `ใบลา-${r.teacherName}.pdf`;
+      link.download = fileName;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+
+      // ใบลาครูใช้ประกอบ HR/บันทึกประวัติการลา — เก็บสำเนาไฟล์จริงไว้ใน Storage
+      const archiveSchoolId = r.schoolId || schoolId;
+      if (archiveSchoolId && r.teacherDocId) {
+        try {
+          const { url: pdfUrl, storagePath } = await archiveGeneratedPdf(archiveSchoolId, "teacher-leaves", blob, fileName);
+          await updateDoc(doc(firestore, "school-settings", archiveSchoolId, "teachers", r.teacherDocId, "leave_summary", r.id), { pdfUrl, storagePath });
+        } catch (archiveErr) {
+          console.warn("Could not archive teacher leave PDF:", archiveErr);
+        }
+      }
     } catch (error) {
       console.error("Failed to generate PDF:", error);
     } finally {

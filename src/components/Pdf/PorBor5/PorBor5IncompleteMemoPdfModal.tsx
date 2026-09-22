@@ -7,6 +7,7 @@ import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import PorBor5IncompleteMemoPdfDocument, {
   PorBor5MemoPdfProps,
 } from './PorBor5IncompleteMemoPdfDocument';
+import { archiveGeneratedPdf } from '@/utils/pdfArchiveUtils';
 
 interface Props {
   isOpen: boolean;
@@ -62,6 +63,18 @@ export const PorBor5IncompleteMemoPdfModal: React.FC<Props> = ({
       // เพราะเลขหนังสือจริงต้องอ้างอิงทะเบียนสารบรรณของโรงเรียน ไม่ใช่ตัวนับในระบบ
       if (schoolId) {
         try {
+          // เก็บสำเนาไฟล์จริง ณ ตอนออกไว้ใน Storage ด้วย — บันทึกข้อความฉบับนี้ถูกส่งให้ผู้บริหารแล้ว
+          // ถ้ารายวิชาที่ยังไม่เสร็จมีการแก้ไขภายหลัง เนื้อหาที่ generate ใหม่จะไม่ตรงกับฉบับที่เคยส่งจริง
+          let pdfUrl: string | undefined;
+          let storagePath: string | undefined;
+          try {
+            const archived = await archiveGeneratedPdf(schoolId, 'grade-incomplete-notices', blob, fileName);
+            pdfUrl = archived.url;
+            storagePath = archived.storagePath;
+          } catch (archiveErr) {
+            console.warn('Could not archive PorBor5 memo PDF:', archiveErr);
+          }
+
           await addDoc(collection(firestore, 'school-settings', schoolId, 'memos'), {
             memoNo: docNo.trim(),
             subject: `รายงานผลการติดตามการจัดทำสมุดบันทึกผลการเรียนรู้รายวิชา (ปพ.5) ${periodText}`,
@@ -70,6 +83,7 @@ export const PorBor5IncompleteMemoPdfModal: React.FC<Props> = ({
             academicYear: pdfProps.academicYear,
             createdBy: createdBy || 'ระบบ',
             createdAt: Timestamp.now(),
+            ...(pdfUrl ? { pdfUrl, storagePath } : {}),
           });
         } catch (regErr) {
           // ไม่ block การดาวน์โหลดไฟล์ที่ผู้ใช้ได้ไปแล้ว แม้บันทึกทะเบียนไม่สำเร็จ

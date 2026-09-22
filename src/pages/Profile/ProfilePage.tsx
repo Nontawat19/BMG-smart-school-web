@@ -25,6 +25,7 @@ import Swal from 'sweetalert2';
 
 import "react-toastify/dist/ReactToastify.css";
 import { getCurrentThaiYear } from "@/utils/dateUtils";
+import { getStatusKey as getPeriodStatusKey } from "@/utils/periodSummaryUtils";
 import { fetchCalendar } from "@/store/slices/calendarSlice";
 import { getActiveSortedTeachers } from "@/utils/teacherSortUtils";
 import { CLASSES, getGroupPersonnel } from "@/utils/schoolUtils";
@@ -1059,7 +1060,7 @@ const ProfilePage: React.FC = () => {
           const reqRef = collection(firestore, "school-settings", profile.schoolId, collectionName, profile.docId, "travel_summary");
           const q = query(reqRef, orderBy("createdAt", "desc"));
           const snapshot = await getDocs(q);
-          const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          const requests = snapshot.docs.map(doc => ({ id: doc.id, docPath: doc.ref.path, ...doc.data() }));
           setOfficialTravelRequests(requests);
         } catch (err) {
           console.error("Error fetching travel requests:", err);
@@ -1410,10 +1411,26 @@ const ProfilePage: React.FC = () => {
   const officialTravelLabel = userRole === 'student' ? 'ไปร่วมกิจกรรม' : 'ไปราชการ';
 
   // Prepare Chart Data
-  // ใช้ตัวเลขจากเอกสารสรุปยอด Yearsummary (yearSummaryStats) — เอกสารเดียวกับระบบที่ใช้คำนวณตัวเลขส่งแจ้งเตือน
-  // ทาง LINE (sendTeacherLineNotification) เพื่อให้ตัวเลขตรงกันเสมอ ไม่นับสดจาก attendanceRecords อีกต่อไป
-  // (การนับสดแยก "กลับก่อน" เป็นหมวดของตัวเอง แต่เอกสารสรุปยอดพับรวมเป็น "มาปกติ" ทำให้ตัวเลขไม่ตรงกับ LINE)
-  const stats = (() => {
+  // นับจาก "เอกสารลงเวลาจริง" ของปีการศึกษานี้ (attendanceRecords) — ใช้กลุ่มสถานะเดียวกับเอกสารสรุปยอด
+  // (getStatusKey: "กลับก่อน" นับเป็น "มาปกติ") เอาไว้เทียบกับตัวนับใน Yearsummary
+  const recordDerivedStats = (() => {
+    if (!attendanceFetched || attendanceRecords.length === 0) return null;
+    const counts = { present: 0, late: 0, leave: 0, absent: 0, noCheckout: 0, official_travel_days: 0 };
+    for (const record of attendanceRecords) {
+      const key = getPeriodStatusKey(String(record.status || ''));
+      if (key === 'present' || key === 'early') counts.present++;
+      else if (key === 'late') counts.late++;
+      else if (key === 'leave') counts.leave++;
+      else if (key === 'absent') counts.absent++;
+      else if (key === 'noCheckout') counts.noCheckout++;
+      else if (key === 'officialTravel') counts.official_travel_days++;
+    }
+    return counts;
+  })();
+
+  // ตัวนับจากเอกสารสรุปยอด Yearsummary (yearSummaryStats) — เอกสารเดียวกับที่ใช้คำนวณตัวเลขส่งแจ้งเตือนทาง LINE
+  // (sendTeacherLineNotification) โดย "กลับก่อน" ถูกพับรวมเป็น "มาปกติ" ในเอกสารนี้
+  const counterStats = (() => {
     // clamp เป็น 0 กันค่าติดลบ — ตัวนับสะสมในเอกสารสรุปยอดเป็น increment/decrement สะสม ถ้ามีบั๊คที่จุดใด
     // จุดหนึ่งเคยหักซ้ำ/หักผิดสถานะ ค่าอาจติดลบได้ ซึ่งไม่มีความหมายสำหรับแสดงผล (และทำให้ pie chart พังด้วย)
     if (yearSummaryStats) {
@@ -1436,6 +1453,20 @@ const ProfilePage: React.FC = () => {
       official_travel_days: Math.max(0, p.official_travel_days || 0),
     };
   })();
+
+  // ตัวเลขที่แสดง = ค่ามากกว่าระหว่าง "ตัวนับสรุปยอด" กับ "เอกสารลงเวลาจริง" ของแต่ละสถานะ (ไม่มีวันไหนหายจากทั้งสองแหล่ง)
+  // เหตุผล: ตัวนับสะสมอาจตกหล่น/ติดลบ (เช่น เอกสารมี "ขาด" แล้วแต่ตัวนับยังเป็น 0) ส่วนเอกสารลงเวลาก็ไม่ครบทุกกรณี —
+  // ลา/ไปราชการที่อนุมัติแล้วบางรายการนับอยู่ในตัวนับแต่ไม่มีเอกสารลงเวลาในช่วงที่ดึงมา ถ้านับจากเอกสารอย่างเดียวจะหายไป
+  const stats = recordDerivedStats
+    ? {
+        present: Math.max(counterStats.present, recordDerivedStats.present),
+        late: Math.max(counterStats.late, recordDerivedStats.late),
+        leave: Math.max(counterStats.leave, recordDerivedStats.leave),
+        absent: Math.max(counterStats.absent, recordDerivedStats.absent),
+        noCheckout: Math.max(counterStats.noCheckout, recordDerivedStats.noCheckout),
+        official_travel_days: Math.max(counterStats.official_travel_days, recordDerivedStats.official_travel_days),
+      }
+    : counterStats;
   const attendanceChartData = [
     { name: 'มาปกติ', value: stats.present || 0, color: '#22c55e' },
     { name: 'สาย', value: stats.late || 0, color: '#eab308' },

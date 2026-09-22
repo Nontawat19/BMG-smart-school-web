@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useParams } from "react-router-dom";
 import { firestore as db } from "../../firebase";
 import { motion, AnimatePresence } from "framer-motion";
-import { collection, query, doc, onSnapshot, where, orderBy, getDocs, setDoc, writeBatch } from "firebase/firestore";
+import { collection, query, doc, onSnapshot, where, orderBy, getDocs, setDoc, addDoc, Timestamp, writeBatch } from "firebase/firestore";
+import { archiveGeneratedPdf } from "@/utils/pdfArchiveUtils";
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "../../store";
 import { fetchCalendar } from "@/store/slices/calendarSlice";
@@ -2313,14 +2314,28 @@ const CourseAssignmentPage2: React.FC = () => {
                 />
             ).toBlob();
 
+            const fileName = `แผนการเปิดการจัดการเรียนการสอน_${subjectGroupLabel}_ภาค${semesterLabel}_${selectedYear}.pdf`;
             const blobUrl = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = blobUrl;
-            link.download = `แผนการเปิดการจัดการเรียนการสอน_${subjectGroupLabel}_ภาค${semesterLabel}_${selectedYear}.pdf`;
+            link.download = fileName;
             document.body.appendChild(link);
             link.click();
             link.remove();
             URL.revokeObjectURL(blobUrl);
+
+            // คำสั่งมอบหมายงานสอนมีผลผูกพันภาระงาน/อาจใช้คำนวณค่าตอบแทน — เก็บสำเนาไฟล์ ณ เวลาที่ออกไว้
+            if (schoolId) {
+                try {
+                    const { url, storagePath } = await archiveGeneratedPdf(schoolId, "teaching-assignments", blob, fileName);
+                    await addDoc(collection(db, "school-settings", schoolId, "teaching-assignments"), {
+                        subjectGroupLabel, academicYear: selectedYear, semester: semesterLabel,
+                        pdfUrl: url, storagePath, createdAt: Timestamp.now(),
+                    });
+                } catch (archiveErr) {
+                    console.warn("Could not archive course assignment PDF:", archiveErr);
+                }
+            }
         } catch (error) {
             console.error("Error generating course assignment PDF:", error);
             Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาด', text: 'ไม่สามารถสร้างไฟล์ PDF ได้' });

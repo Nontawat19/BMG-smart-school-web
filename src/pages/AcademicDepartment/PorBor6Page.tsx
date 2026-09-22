@@ -3,13 +3,14 @@ import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore } from "@/firebase";
-import { collection, getDocs, query, orderBy, doc, getDoc } from "firebase/firestore";
+import { collection, getDocs, query, orderBy, doc, getDoc, addDoc, Timestamp } from "firebase/firestore";
 import { FaSearch, FaFileAlt } from "react-icons/fa";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X, FileDown, Loader2 } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
 import { isStudyingStudent } from "@/utils/studentStatusUtils";
 import { pdf, PDFViewer } from "@react-pdf/renderer";
 import { saveAs } from "file-saver";
+import { archiveGeneratedPdf } from "@/utils/pdfArchiveUtils";
 import PorBor6ReportDocument from "@/components/Pdf/porbor6/PorBor6ReportDocument";
 import { fetchPorBor6ReportData, computeClassLevelRanks, ClassLevelRankEntry, PorBor6ReportData } from "@/utils/porBor6Utils";
 import { getThaiYear, getCurrentThaiYear } from "@/utils/dateUtils";
@@ -81,7 +82,9 @@ const PorBor6Page: React.FC = () => {
     const [selectedClassLevel, setSelectedClassLevel] = useState('');
     const [selectedRoom, setSelectedRoom] = useState('');
     const [isExporting, setIsExporting] = useState<string | null>(null);
-    const [pdfPreview, setPdfPreview] = useState<{ document: React.ReactNode; fileName: string } | null>(null);
+    // meta: ข้อมูลไว้บันทึกทะเบียน student-report-cards + อัปโหลดไฟล์จริงตอนกดดาวน์โหลด (เอกสารทางการต้องคง
+    // สภาพ ณ เวลาที่ออก ต่างจากแคช PDF ที่แก้ไขได้)
+    const [pdfPreview, setPdfPreview] = useState<{ document: React.ReactNode; fileName: string; meta?: { schoolId: string; studentId: string; studentName: string; academicYear: string; semester: string } } | null>(null);
     const [isDownloadingPreviewPdf, setIsDownloadingPreviewPdf] = useState(false);
 
     const {
@@ -303,7 +306,18 @@ const PorBor6Page: React.FC = () => {
                 />
             );
 
-            setPdfPreview({ document: docToRender, fileName: `ปพ6_${student.firstName}_${student.lastName}.pdf` });
+            const activeSchoolIdForMeta = (schoolId || reduxSchoolId) as string;
+            setPdfPreview({
+                document: docToRender,
+                fileName: `ปพ6_${student.firstName}_${student.lastName}.pdf`,
+                meta: {
+                    schoolId: activeSchoolIdForMeta,
+                    studentId: student.id,
+                    studentName: `${student.title || ''}${student.firstName} ${student.lastName}`.trim(),
+                    academicYear,
+                    semester,
+                },
+            });
         } catch (error) {
             console.error("Error generating ปพ.6:", error);
             Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาด', text: 'ไม่สามารถสร้างรายงานผลการเรียนได้ กรุณาลองใหม่อีกครั้ง', background: '#2a2b2f', color: '#ffffff' });
@@ -318,6 +332,25 @@ const PorBor6Page: React.FC = () => {
         try {
             const blob = await pdf(pdfPreview.document as any).toBlob();
             saveAs(blob, pdfPreview.fileName);
+
+            // เอกสาร ปพ.6 เป็นระเบียนถาวรของนักเรียน ต้องเก็บสำเนา ณ เวลาที่ออกไว้ใน Storage — ถ้าเกรด/อันดับ
+            // ถูกคำนวณใหม่ภายหลัง ยังเปิดดูฉบับที่เคยออกจริงได้
+            if (pdfPreview.meta?.schoolId) {
+                try {
+                    const { url, storagePath } = await archiveGeneratedPdf(pdfPreview.meta.schoolId, "student-report-cards", blob, pdfPreview.fileName);
+                    await addDoc(collection(firestore, "school-settings", pdfPreview.meta.schoolId, "student-report-cards"), {
+                        studentId: pdfPreview.meta.studentId,
+                        studentName: pdfPreview.meta.studentName,
+                        academicYear: pdfPreview.meta.academicYear,
+                        semester: pdfPreview.meta.semester,
+                        pdfUrl: url,
+                        storagePath,
+                        createdAt: Timestamp.now(),
+                    });
+                } catch (archiveErr) {
+                    console.warn("Could not archive ปพ.6 PDF:", archiveErr);
+                }
+            }
         } finally {
             setIsDownloadingPreviewPdf(false);
         }

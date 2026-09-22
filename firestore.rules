@@ -140,6 +140,14 @@ service cloud.firestore {
           allow write: if isRealAuth();
         }
 
+        // NEW: หน้ารายงานสรุปการเข้าร่วมชุมนุม (ClubReportsPage) อ่านการเช็คชื่อชุมนุมด้วย
+        // getDocs(collection(...)) (list query) — subcollection ไม่ได้รับ rule จาก parent doc ด้านบน
+        // อัตโนมัติ ต้องมี match ของตัวเอง เหตุผลเดียวกับ members/evaluations ด้านบน-ล่าง
+        match /attendance/{attendanceId} {
+          allow read: if isAuthenticated();
+          allow write: if isRealAuth();
+        }
+
         // NEW: ระบบแก้ 0/ร/มส/มผ อ่านผลประเมิน "มผ" ของชุมนุมด้วย getDocs(collection(...)) (list query) —
         // subcollection ไม่ได้รับ rule จาก parent doc ด้านบนอัตโนมัติ ต้องมี match ของตัวเอง (เหตุผลเดียวกับ
         // members ด้านบน และ learner-activities/{id}/{subPath=**} ด้านล่าง)
@@ -222,6 +230,22 @@ service cloud.firestore {
         allow read, write: if isRealAuth();
       }
       match /memos/{docId} {
+        allow read, write: if isRealAuth();
+      }
+      // NEW: ทะเบียนสำเนาไฟล์ PDF ของเอกสารทางการที่ generate จากระบบแล้วต้องเก็บสำเนา ณ เวลาที่ออกไว้
+      // (ต่างจาก certificates/memos ด้านบนที่มี rule อยู่แล้ว) — PorBor6Page, ZeroRMsGradeReportPage,
+      // CourseAssignmentPage2, StudentBK14ReportPage ตามลำดับ เขียนด้วย getDocs(collection(...))/addDoc
+      // ซึ่งไม่ได้รับ rule จาก catch-all ด้านล่างโดยอัตโนมัติเสมอไป (เจอบั๊กแบบนี้มาแล้วกับ clubs/attendance)
+      match /student-report-cards/{docId} {
+        allow read, write: if isRealAuth();
+      }
+      match /grade-announcements/{docId} {
+        allow read, write: if isRealAuth();
+      }
+      match /teaching-assignments/{docId} {
+        allow read, write: if isRealAuth();
+      }
+      match /behavior-records/{docId} {
         allow read, write: if isRealAuth();
       }
       match /honorCertificates/{docId} {

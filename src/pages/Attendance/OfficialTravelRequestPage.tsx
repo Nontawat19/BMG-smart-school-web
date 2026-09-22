@@ -472,7 +472,7 @@ const OfficialTravelRequestPage: React.FC = () => {
                     docNo,
                 };
                 await updateDoc(doc(firestore, editPath), { ...data, updatedAt: Timestamp.now(), updatedBy: user.uid });
-                setSavedData(data);
+                setSavedData({ ...data, docPath: editPath });
                 setIsSaved(true);
                 Swal.fire({ icon: "success", title: "บันทึกการแก้ไขสำเร็จ", background: isDarkMode ? "#111827" : "#fff", color: isDarkMode ? "#f9fafb" : "#111827", confirmButtonColor: "#4f46e5", timer: 2000, showConfirmButton: false });
             } catch (error) {
@@ -521,8 +521,9 @@ const OfficialTravelRequestPage: React.FC = () => {
                     docNo: finalDocNo, academicYear, schoolId, schoolAffiliation, teacherDocId: finalRequesterId,
                     ...(isTeacherRole ? {} : { submittedByUid: user.uid }),
                 };
-                tx.set(doc(collection(requesterRef, "travel_summary")), data);
-                setSavedData(data);
+                const newTravelRef = doc(collection(requesterRef, "travel_summary"));
+                tx.set(newTravelRef, data);
+                setSavedData({ ...data, docPath: newTravelRef.path });
             });
             setIsSaved(true);
             Swal.fire({ icon: "success", title: "บันทึกสำเร็จ", background: isDarkMode ? "#111827" : "#fff", color: isDarkMode ? "#f9fafb" : "#111827", confirmButtonColor: "#4f46e5", timer: 2000, showConfirmButton: false });
