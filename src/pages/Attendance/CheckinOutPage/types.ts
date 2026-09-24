@@ -6,6 +6,7 @@ export interface FoundUser {
   displayId: string;
   latestActionTime?: string;
   status?: string;
+  studentStatus?: string;
   grade?: string;
   room?: string;
   position?: string;

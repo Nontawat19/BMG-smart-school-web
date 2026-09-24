@@ -120,6 +120,7 @@ const TimeRangeAttendanceSummaryPage = lazy(() => import("./pages/AcademicDepart
 const StudentBehaviorClassReportPage = lazy(() => import("./pages/AcademicDepartment/StudentBehaviorClassReportPage"));
 const GradeBookPage = lazy(() => import("./pages/AcademicDepartment/GradeBookPage"));
 const PorBor5TrackingReportPage = lazy(() => import("./pages/AcademicDepartment/PorBor5TrackingReportPage"));
+const PorBor5SubmissionMemoPage = lazy(() => import("./pages/AcademicDepartment/PorBor5SubmissionMemoPage"));
 const SchoolCalendarPage = lazy(() => import("./pages/AcademicDepartment/SchoolCalendarPage"));
 const SubstituteManagementPage = lazy(() => import("./pages/AcademicDepartment/SubstituteManagementPage"));
 const SubstituteReportPage = lazy(() => import("./pages/AcademicDepartment/SubstituteReportPage"));
@@ -464,6 +465,7 @@ function App() {
           <Route path="/academic/my-schedule" element={<ProtectedRoute allowedRoles={[...STAFF_ACCESS, ROLES.STUDENT]}><MySchedulePage /></ProtectedRoute>} />
           <Route path="/academic/grade-book" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><GradeBookPage /></ProtectedRoute>} />
           <Route path="/academic/porbor5-tracking-report" element={<ProtectedRoute allowedRoles={[...TEACHER_OPERATIONAL, ...ACADEMIC_MANAGEMENT]}><PorBor5TrackingReportPage /></ProtectedRoute>} />
+          <Route path="/academic/porbor5-submission-memo" element={<ProtectedRoute allowedRoles={[...TEACHER_OPERATIONAL, ...ACADEMIC_MANAGEMENT]}><PorBor5SubmissionMemoPage /></ProtectedRoute>} />
           <Route path="/academic/attendance-ms-backfill" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><AttendanceMsBackfillPage /></ProtectedRoute>} />
           <Route path="/debug/ms-flag-check" element={<ProtectedRoute allowedRoles={OWNER_ONLY}><MsFlagDiagnosticPage /></ProtectedRoute>} />
           <Route path="/debug/remediation-audit" element={<ProtectedRoute allowedRoles={OWNER_ONLY}><RemediationAuditPage /></ProtectedRoute>} />

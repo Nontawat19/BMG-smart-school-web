@@ -1,5 +1,8 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
+import { UserCheck, History, Calendar, ArrowRight, X } from 'lucide-react';
 import { getEffectivePeriodEnd, getScheduleSlotCandidates, getTimetableDisplayPeriods, NormalizedPeriod, PeriodLike } from '@/utils/scheduleDisplayUtils';
+import { getAttendanceRouteForScheduleCell, getAttendanceHistoryRouteForScheduleCell } from '@/utils/scheduleAttendanceUtils';
 
 interface ScheduleCourseEntry {
   id?: string;
@@ -16,6 +19,9 @@ interface ScheduleCourseEntry {
 interface ScheduleEntry {
   course?: ScheduleCourseEntry;
   classId?: string | string[];
+  rawClassId?: string | string[];
+  classLevels?: string[];
+  assignmentRoom?: string | number;
   teacherName?: string;
   className?: string;
   roomCode?: string;
@@ -84,6 +90,19 @@ interface PersonalScheduleTableProps {
   clubs?: ClubLike[];
   viewerId?: string;
   mode: 'teacher' | 'student';
+  academicYear?: string;
+  semester?: string;
+}
+
+interface CellActionModalData {
+  courseTitle: string;
+  courseCode?: string;
+  className?: string;
+  room?: string;
+  dayName: string;
+  periodLabel: string;
+  liveRoute: string;
+  historyRoute: string | null;
 }
 
 const getCourseTitle = (course?: ScheduleCourseEntry) => course?.title || course?.courseName || course?.subjectName || 'วิชาไม่ระบุชื่อ';
@@ -157,7 +176,24 @@ const PersonalScheduleTable: React.FC<PersonalScheduleTableProps> = ({
   clubs = [],
   viewerId,
   mode,
+  academicYear,
+  semester,
 }) => {
+  const navigate = useNavigate();
+  const [selectedCellForAction, setSelectedCellForAction] = React.useState<CellActionModalData | null>(null);
+
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedCellForAction(null);
+      }
+    };
+    if (selectedCellForAction) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedCellForAction]);
+
   const displayPeriods = React.useMemo(() => getTimetableDisplayPeriods(periodSettings), [periodSettings]);
 
   const getScheduleEntryForPeriod = (dayKey: string, period: NormalizedPeriod, periodIndex: number) => {
@@ -291,12 +327,28 @@ const PersonalScheduleTable: React.FC<PersonalScheduleTableProps> = ({
                   }
 
                   if (cell.type === 'special') {
+                    const isInteractive = mode === 'teacher';
+                    const attendanceRoute = isInteractive ? getAttendanceRouteForScheduleCell(cell, dayKey) : null;
                     return (
-                      <td key={`special-${dayKey}-${idx}`} className="border-r last:border-none border-r-gray-200 dark:border-r-gray-700 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 text-center align-middle p-0.5 sm:p-1 border-t border-b border-t-emerald-100 border-b-emerald-100 dark:border-t-emerald-900/50 dark:border-b-emerald-900/50" colSpan={cell.colSpan}>
+                      <td
+                        key={`special-${dayKey}-${idx}`}
+                        className={`border-r last:border-none border-r-gray-200 dark:border-r-gray-700 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 text-center align-middle p-0.5 sm:p-1 border-t border-b border-t-emerald-100 border-b-emerald-100 dark:border-t-emerald-900/50 dark:border-b-emerald-900/50 transition-all ${
+                          attendanceRoute ? 'cursor-pointer hover:bg-emerald-100/80 dark:hover:bg-emerald-900/40 hover:shadow-sm active:scale-[0.99] group' : ''
+                        }`}
+                        colSpan={cell.colSpan}
+                        onClick={attendanceRoute ? () => navigate(attendanceRoute) : undefined}
+                        title={attendanceRoute ? `${cell.special.title} (คลิกเพื่อเข้าหน้าเช็คชื่อ)` : cell.special.title}
+                      >
                         <div className="flex min-h-[52px] min-[420px]:min-h-[60px] sm:min-h-[72px] landscape:min-h-[60px] md:landscape:min-h-[72px] flex-col items-center justify-center">
                           <div className="font-bold text-[6px] min-[420px]:text-[7px] sm:text-[9px] leading-tight truncate">{cell.special.title}</div>
                           {cell.special.description && (
                             <div className="text-[5px] sm:text-[7px] text-emerald-600 dark:text-emerald-400 mt-0.5 truncate">{cell.special.description}</div>
+                          )}
+                          {attendanceRoute && (
+                            <div className="hidden group-hover:inline-flex items-center gap-0.5 text-[5px] min-[420px]:text-[6px] sm:text-[8px] font-bold text-emerald-700 dark:text-emerald-300 mt-0.5">
+                              <UserCheck size={9} />
+                              <span>เช็คชื่อ</span>
+                            </div>
                           )}
                         </div>
                       </td>
@@ -304,11 +356,27 @@ const PersonalScheduleTable: React.FC<PersonalScheduleTableProps> = ({
                   }
 
                   if (cell.type === 'club') {
+                    const isInteractive = mode === 'teacher';
+                    const attendanceRoute = isInteractive ? getAttendanceRouteForScheduleCell(cell, dayKey) : null;
                     return (
-                      <td key={`club-${dayKey}-${idx}`} className="border-r last:border-none border-r-gray-200 dark:border-r-gray-700 bg-teal-50 dark:bg-teal-950/20 text-teal-800 dark:text-teal-300 text-center align-middle p-0.5 sm:p-1 border-t border-b border-t-teal-100 border-b-teal-100 dark:border-t-teal-900/50 dark:border-b-teal-900/50" colSpan={cell.colSpan}>
+                      <td
+                        key={`club-${dayKey}-${idx}`}
+                        className={`border-r last:border-none border-r-gray-200 dark:border-r-gray-700 bg-teal-50 dark:bg-teal-950/20 text-teal-800 dark:text-teal-300 text-center align-middle p-0.5 sm:p-1 border-t border-b border-t-teal-100 border-b-teal-100 dark:border-t-teal-900/50 dark:border-b-teal-900/50 transition-all ${
+                          attendanceRoute ? 'cursor-pointer hover:bg-teal-100/80 dark:hover:bg-teal-900/40 hover:shadow-sm active:scale-[0.99] group' : ''
+                        }`}
+                        colSpan={cell.colSpan}
+                        onClick={attendanceRoute ? () => navigate(attendanceRoute) : undefined}
+                        title={attendanceRoute ? `${cell.club.clubName} (คลิกเพื่อเข้าหน้าเช็คชื่อ)` : cell.club.clubName}
+                      >
                         <div className="flex min-h-[52px] min-[420px]:min-h-[60px] sm:min-h-[72px] landscape:min-h-[60px] md:landscape:min-h-[72px] flex-col items-center justify-center">
                           <div className="font-bold text-[6px] min-[420px]:text-[7px] sm:text-[9px] leading-tight truncate">{cell.club.clubName}</div>
                           <div className="text-[5px] min-[420px]:text-[6px] sm:text-[8px] text-teal-600 dark:text-teal-400 mt-0.5 truncate">กิจกรรมชุมนุม</div>
+                          {attendanceRoute && (
+                            <div className="hidden group-hover:inline-flex items-center gap-0.5 text-[5px] min-[420px]:text-[6px] sm:text-[8px] font-bold text-teal-700 dark:text-teal-300 mt-0.5">
+                              <UserCheck size={9} />
+                              <span>เช็คชื่อ</span>
+                            </div>
+                          )}
                         </div>
                       </td>
                     );
@@ -320,9 +388,44 @@ const PersonalScheduleTable: React.FC<PersonalScheduleTableProps> = ({
                   const room = getEntryRoom(cell.entry, mode);
                   const teacherPeriodLabel = getTeacherPeriodLabel(cell.entry, mode);
                   const colors = getCourseColors(courseCode);
+                  const isInteractive = mode === 'teacher';
+                  const liveAttendanceRoute = isInteractive ? getAttendanceRouteForScheduleCell(cell, dayKey) : null;
+                  const historyAttendanceRoute = isInteractive ? getAttendanceHistoryRouteForScheduleCell(cell, academicYear, semester, dayKey) : null;
+
+                  const periodEndTime = getEffectivePeriodEnd(displayPeriods, cell.period, idx);
+                  const periodFullLabel = cell.period.label
+                    ? `${cell.period.label} (${cell.period.startTime} - ${periodEndTime})`
+                    : `${cell.period.startTime} - ${periodEndTime}`;
+                  const dayFullLabel = DAYS[dayKey] ? `วัน${DAYS[dayKey]}` : dayKey;
+
+                  const handleCellClick = () => {
+                    if (!liveAttendanceRoute) return;
+                    if (historyAttendanceRoute) {
+                      setSelectedCellForAction({
+                        courseTitle,
+                        courseCode,
+                        className: meta,
+                        room,
+                        dayName: dayFullLabel,
+                        periodLabel: periodFullLabel,
+                        liveRoute: liveAttendanceRoute,
+                        historyRoute: historyAttendanceRoute,
+                      });
+                    } else {
+                      navigate(liveAttendanceRoute);
+                    }
+                  };
 
                   return (
-                    <td key={`course-${dayKey}-${idx}`} className={`border-r last:border-none border-r-gray-200 dark:border-r-gray-700 text-center align-middle p-0 cursor-default border-t border-b ${colors.bg} ${colors.text} ${colors.border}`} colSpan={cell.colSpan}>
+                    <td
+                      key={`course-${dayKey}-${idx}`}
+                      className={`border-r last:border-none border-r-gray-200 dark:border-r-gray-700 text-center align-middle p-0 border-t border-b ${colors.bg} ${colors.text} ${colors.border} transition-all relative ${
+                        liveAttendanceRoute ? 'cursor-pointer hover:brightness-95 hover:shadow-md active:scale-[0.99] group' : 'cursor-default'
+                      }`}
+                      colSpan={cell.colSpan}
+                      onClick={liveAttendanceRoute ? handleCellClick : undefined}
+                      title={liveAttendanceRoute ? (historyAttendanceRoute ? `${courseTitle} (คลิกเพื่อเลือกเช็คชื่อ หรือเช็คชื่อย้อนหลัง)` : `${courseTitle} (คลิกเพื่อเข้าหน้าเช็คชื่อ)`) : courseTitle}
+                    >
                       <div className="flex min-h-[52px] min-[420px]:min-h-[60px] sm:min-h-[72px] landscape:min-h-[60px] md:landscape:min-h-[72px] flex-col items-center justify-center gap-0.5 px-0.5 min-[420px]:px-1 sm:px-1.5 py-1 sm:py-1.5">
                         {teacherPeriodLabel && (
                           <div className="mb-0.5 inline-flex max-w-full items-center justify-center rounded-full bg-white/70 dark:bg-black/20 px-1.5 py-0.5 text-[5px] min-[420px]:text-[6px] sm:text-[8px] font-black text-orange-600 dark:text-orange-300 ring-1 ring-orange-200/70 dark:ring-orange-800/50">
@@ -346,6 +449,36 @@ const PersonalScheduleTable: React.FC<PersonalScheduleTableProps> = ({
                             <span className="truncate">{room}</span>
                           </div>
                         )}
+                        {isInteractive && liveAttendanceRoute && (
+                          <div className="hidden group-hover:flex flex-wrap items-center justify-center gap-1 mt-1 z-10 animate-in fade-in duration-150 max-w-full">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(liveAttendanceRoute);
+                              }}
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-[9px] font-bold whitespace-nowrap shadow-xs transition-all hover:scale-105 active:scale-95 shrink-0"
+                              title="เช็คชื่อคาบนี้ (สด)"
+                            >
+                              <UserCheck size={10} className="shrink-0" />
+                              <span className="whitespace-nowrap">เช็คชื่อ</span>
+                            </button>
+                            {historyAttendanceRoute && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigate(historyAttendanceRoute);
+                                }}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-purple-600 hover:bg-purple-700 text-white text-[9px] font-bold whitespace-nowrap shadow-xs transition-all hover:scale-105 active:scale-95 shrink-0"
+                                title="เช็คชื่อย้อนหลัง (ประวัติ)"
+                              >
+                                <History size={10} className="shrink-0" />
+                                <span className="whitespace-nowrap">ย้อนหลัง</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </td>
                   );
@@ -355,6 +488,133 @@ const PersonalScheduleTable: React.FC<PersonalScheduleTableProps> = ({
           })}
         </tbody>
       </table>
+
+      {/* Attendance Action Selection Modal */}
+      {selectedCellForAction && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setSelectedCellForAction(null)}
+        >
+          <div
+            className="relative w-full max-w-md bg-white dark:bg-[#1a1b1e] rounded-3xl p-6 shadow-2xl border border-gray-100 dark:border-gray-800 animate-in zoom-in-95 duration-200 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Decorative background glow */}
+            <div className="absolute -top-16 -right-16 w-40 h-40 bg-gradient-to-br from-indigo-500/15 to-purple-500/15 rounded-full blur-2xl pointer-events-none" />
+
+            {/* Header */}
+            <div className="relative flex items-start justify-between gap-3 mb-5">
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 text-xs font-bold mb-2">
+                  <Calendar size={13} />
+                  <span>{selectedCellForAction.dayName} • {selectedCellForAction.periodLabel}</span>
+                </div>
+                <h3 className="text-lg font-black text-gray-900 dark:text-white leading-snug">
+                  {selectedCellForAction.courseTitle}
+                </h3>
+                <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium">
+                  {selectedCellForAction.courseCode && (
+                    <span className="font-semibold text-gray-700 dark:text-gray-300">{selectedCellForAction.courseCode}</span>
+                  )}
+                  {selectedCellForAction.className && (
+                    <>
+                      <span>•</span>
+                      <span className="font-bold text-indigo-600 dark:text-indigo-400">{selectedCellForAction.className}</span>
+                    </>
+                  )}
+                  {selectedCellForAction.room && (
+                    <>
+                      <span>•</span>
+                      <span>{selectedCellForAction.room}</span>
+                    </>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedCellForAction(null)}
+                className="p-1.5 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                title="ปิด"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Action Choice Cards */}
+            <div className="relative space-y-3">
+              {/* Option 1: Live Attendance */}
+              <button
+                type="button"
+                onClick={() => {
+                  const route = selectedCellForAction.liveRoute;
+                  setSelectedCellForAction(null);
+                  navigate(route);
+                }}
+                className="w-full group p-4 rounded-2xl border-2 border-indigo-100 hover:border-indigo-500 dark:border-indigo-900/40 dark:hover:border-indigo-500 bg-indigo-50/40 hover:bg-indigo-50 dark:bg-indigo-950/20 dark:hover:bg-indigo-950/40 text-left transition-all flex items-center justify-between shadow-sm hover:shadow-md active:scale-[0.99]"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-600 to-blue-500 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform shrink-0">
+                    <UserCheck size={24} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-black text-gray-900 dark:text-white text-base">เช็คชื่อประจำวัน</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-200/80 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200">
+                        คาบนี้ (สด)
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      บันทึกเวลาเรียน ขาด ลา มาสาย ของคาบเรียนวันนี้
+                    </p>
+                  </div>
+                </div>
+                <ArrowRight size={18} className="text-indigo-600 dark:text-indigo-400 transform group-hover:translate-x-1 transition-transform shrink-0" />
+              </button>
+
+              {/* Option 2: Historical Attendance */}
+              {selectedCellForAction.historyRoute && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const route = selectedCellForAction.historyRoute!;
+                    setSelectedCellForAction(null);
+                    navigate(route);
+                  }}
+                  className="w-full group p-4 rounded-2xl border-2 border-purple-100 hover:border-purple-500 dark:border-purple-900/40 dark:hover:border-purple-500 bg-purple-50/40 hover:bg-purple-50 dark:bg-purple-950/20 dark:hover:bg-purple-950/40 text-left transition-all flex items-center justify-between shadow-sm hover:shadow-md active:scale-[0.99]"
+                >
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-purple-600 to-pink-500 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform shrink-0">
+                      <History size={24} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-black text-gray-900 dark:text-white text-base">เช็คชื่อย้อนหลัง</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-200/80 dark:bg-purple-900 text-purple-800 dark:text-purple-200">
+                          ประวัติทั้งเทอม
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                        ตรวจสอบและแก้ไขประวัติการเข้าเรียนรายเดือน / ปพ.5
+                      </p>
+                    </div>
+                  </div>
+                  <ArrowRight size={18} className="text-purple-600 dark:text-purple-400 transform group-hover:translate-x-1 transition-transform shrink-0" />
+                </button>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="relative mt-5 pt-4 border-t border-gray-100 dark:border-gray-800 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedCellForAction(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              >
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

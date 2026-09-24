@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import BackButton from '@/components/Shared/BackButton';
 import ProfileAvatar from '@/components/Shared/ProfileAvatar';
@@ -44,6 +44,7 @@ const GuidanceAttendancePage: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const isPwaMode = usePwaMode();
+  const [searchParams] = useSearchParams();
 
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const schoolId = (currentUser as any)?.schoolId;
@@ -52,9 +53,26 @@ const GuidanceAttendancePage: React.FC = () => {
   const schoolSettingsState = useSelector((state: RootState) => state.schoolSettings);
 
   // Core Filters & Selections
-  const [currentDate, setCurrentDate] = useState<Date>(new Date());
+  const [currentDate, setCurrentDate] = useState<Date>(() => {
+    const dateParam = searchParams.get('date');
+    if (dateParam) {
+      const parsed = new Date(dateParam);
+      if (Number.isFinite(parsed.getTime())) return parsed;
+    }
+    return new Date();
+  });
   const [selectedClassKey, setSelectedClassKey] = useState<string>('');
   const [selectedRoom, setSelectedRoom] = useState<string>('');
+
+  useEffect(() => {
+    const dateParam = searchParams.get('date');
+    if (dateParam) {
+      const parsed = new Date(dateParam);
+      if (Number.isFinite(parsed.getTime())) {
+        setCurrentDate(parsed);
+      }
+    }
+  }, [searchParams]);
   
   // Roster & Attendance State
   const [students, setStudents] = useState<Student[]>([]);

@@ -997,6 +997,15 @@ const HubPage: React.FC = () => {
           featureKey: "showGradeBookMenu"
         },
         {
+          title: "บันทึกข้อความส่ง ปพ.5",
+          description: "จัดทำและพิมพ์บันทึกข้อความราชการนำส่งสมุด ปพ.5 สำหรับรายวิชาที่จัดทำเสร็จสิ้นแล้ว",
+          icon: <FileText size={24} />,
+          path: "/academic/porbor5-submission-memo",
+          colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
+          allowedRoles: [...TEACHER_OPERATIONAL, ...ACADEMIC_MANAGEMENT],
+          featureKey: "showGradeBookMenu"
+        },
+        {
           title: "บันทึกคะแนน (ก่อนกลางภาค)",
           description: "บันทึกคะแนนเก็บและคะแนนกลางภาค",
           icon: <Calculator size={24} />,

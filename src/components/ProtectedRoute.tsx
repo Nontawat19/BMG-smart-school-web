@@ -15,6 +15,7 @@ import { useEffectiveSchoolId } from '@/hooks/useEffectiveSchool';
 import { resolveEffectiveRouteAccess, userHasRouteAccess } from '@/utils/routeAccess';
 import { isFeatureFlagEnabled } from '@/utils/featureFlags';
 import ConsentGate from './ConsentGate';
+import LoadingScreen from './LoadingScreen';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -114,11 +115,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
   }, [featureFlag, effectiveSchoolId]);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (!isAuthenticated) {
@@ -218,11 +215,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
     // otherwise a role granted access via the permission-management UI would
     // get bounced to /home during the brief window before the fetch resolves.
     if (!permissionsLoaded) {
-      return (
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
-        </div>
-      );
+      return <LoadingScreen />;
     }
 
     // ครูเข้าหน้าเช็คอิน/เช็คเอาท์ได้เสมอ — จำกัดแค่ลงเวลาของตัวเองเท่านั้น (บังคับอยู่แล้วใน

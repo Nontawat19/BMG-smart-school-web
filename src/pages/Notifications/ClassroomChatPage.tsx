@@ -21,6 +21,7 @@ import { formatNotificationTime } from "@/utils/dateUtils";
 import { MessagesSquare, Inbox } from "lucide-react";
 import AttendanceNotificationCard, { AttendanceNotificationPayload } from "./AttendanceNotificationCard";
 import { purgeExpiredAttendanceNotifications } from "./purgeExpiredAttendanceNotifications";
+import { filterAndPurgeInactiveAttendanceNotifications } from "./attendanceNotificationFilter";
 import { getChatSchoolId } from "@/pages/Chat/chatConstants";
 
 interface AttendanceNotificationItem {
@@ -96,8 +97,16 @@ const ClassroomChatPage: React.FC = () => {
         .filter((d) => d.attendance && d.createdAt && getBangkokDateString(d.createdAt.toDate()) === todayStr)
         .map((d) => ({ id: d.path, path: d.path, createdAt: d.createdAt as Timestamp, attendance: d.attendance as AttendanceNotificationPayload }));
 
-      setItems(todayItems);
-      setIsLoading(false);
+      filterAndPurgeInactiveAttendanceNotifications(todayItems, schoolId)
+        .then((filteredItems) => {
+          setItems(filteredItems);
+          setIsLoading(false);
+        })
+        .catch((err) => {
+          console.error("Error filtering inactive attendance notifications:", err);
+          setItems(todayItems);
+          setIsLoading(false);
+        });
 
       // ลบของที่ข้ามวันไปแล้วทิ้งจาก Firestore เป็น side effect เบื้องหลัง กันฐานข้อมูลบวม
       purgeExpiredAttendanceNotifications(allDocs);
@@ -107,7 +116,7 @@ const ClassroomChatPage: React.FC = () => {
     });
 
     return () => unsub();
-  }, [isParentSession, currentUser?.uid]);
+  }, [isParentSession, currentUser?.uid, schoolId]);
 
   // ผู้ปกครอง: เก็บไว้คนละที่จากครู (school-settings/{schoolId}/students/{studentId}/parentNotifications
   // — ดู comment ที่ notifyParentInApp ใน AttendanceInAppNotify.ts ว่าทำไมแยกจากของครู) ฟังทีละคนต่อบุตร
@@ -143,8 +152,16 @@ const ClassroomChatPage: React.FC = () => {
         const merged = Array.from(perChildItems.values())
           .flat()
           .sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis());
-        setItems(merged);
-        setIsLoading(false);
+
+        filterAndPurgeInactiveAttendanceNotifications(merged, schoolId)
+          .then((filtered) => {
+            setItems(filtered);
+            setIsLoading(false);
+          })
+          .catch(() => {
+            setItems(merged);
+            setIsLoading(false);
+          });
       }, (error) => {
         console.error("Error listening to parent attendance notifications:", error);
         setIsLoading(false);

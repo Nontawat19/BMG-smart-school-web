@@ -28,6 +28,7 @@ import { isNonOfficialHoliday } from "../../../utils/calendarUtils";
 import { FoundUser } from "./types";
 import { sendLineAttendanceNotification, sendTeacherLineAttendanceNotification } from "./AttendanceLineNotify";
 import { notifyHomeroomTeachersInApp, notifyParentInApp, notifyParentInChat } from "./AttendanceInAppNotify";
+import { purgeExpiredFaceScanSnapshots } from "./faceScanStoragePurge";
 import { deg2rad, getDistanceFromLatLonInM, isPointInPolygon, getStatusKey } from "./utils";
 import HolidayBanner from "./HolidayBanner";
 import AutoFitHeading from "./AutoFitHeading";
@@ -46,7 +47,7 @@ import { ROLES } from "../../../constants/roles";
 import { STAFF_ACCESS } from "../../../constants/permissions";
 import { calculateAttendanceBehaviorScoreChange } from "../../../utils/behaviorScoreUtils";
 import { isAttendanceEntryOnly } from "../../../utils/attendanceRoles";
-import { isStudyingStudent } from "../../../utils/studentStatusUtils";
+import { isStudyingStudent, isActiveStudentStatus } from "../../../utils/studentStatusUtils";
 import { isActiveTeacherSummaryStatus } from "../../../utils/ownerStatsUtils";
 import { getDailySummaryTotal } from "../../../utils/attendanceDayProcessing";
 
@@ -411,6 +412,9 @@ const CheckinOutPage: React.FC = () => {
   // Pre-load and cache all students to avoid Firestore reads during scanning
   useEffect(() => {
     if (!schoolId) return;
+
+    // ล้างภาพถ่ายสแกนใบหน้าที่เก่าเกิน 2 วันใน Firebase Storage อัตโนมัติ (ตาม PDPA)
+    purgeExpiredFaceScanSnapshots(schoolId, 2);
 
     const loadAndCacheStudents = async () => {
       try {
@@ -1198,6 +1202,7 @@ const CheckinOutPage: React.FC = () => {
         displayId: d.studentId,
         grade: String(d.classLevel || d.grade || d.classroom || ""),
         room: String(d.room || ""),
+        studentStatus: d.status || d.studentStatus || "กำลังศึกษาอยู่",
         parentLineUserIds: d.parentLineUserIds || [],
         parentLineRegistrationContexts: d.parentLineRegistrationContexts || {},
         lineRegistrationReviewRequired: Boolean(d.lineRegistrationReviewRequired),
@@ -1486,6 +1491,14 @@ const CheckinOutPage: React.FC = () => {
     actionType: string
   ) => {
     if (user.type !== "student") return;
+
+    // กรองเฉพาะนักเรียนสถานะกำลังศึกษาอยู่เท่านั้น
+    const initialStatus = user.studentStatus || (user as any).status;
+    if (initialStatus && !isActiveStudentStatus(initialStatus)) {
+      console.log(`[Notification] Skipped notification for non-active student: ${user.displayId} ${user.name} (status: ${initialStatus})`);
+      return;
+    }
+
     console.log(`[LINE] sendLineNotification called — actionType: ${actionType}, student: ${user.displayId}, hasSchoolSettings: ${Boolean(schoolSettings?.lineOASettings?.school)}`);
     try {
       // ดึงข้อมูลสรุปภาคเรียนล่าสุดและ behaviorScore ปัจจุบันจาก Firestore พร้อมกัน
@@ -1504,6 +1517,15 @@ const CheckinOutPage: React.FC = () => {
         getDoc(semesterRef),
         getDoc(studentDocRef),
       ]);
+
+      const liveStudentStatus = studentSnap.exists()
+        ? (studentSnap.data().status || studentSnap.data().studentStatus || user.studentStatus || "กำลังศึกษาอยู่")
+        : (user.studentStatus || "กำลังศึกษาอยู่");
+
+      if (!isActiveStudentStatus(liveStudentStatus)) {
+        console.log(`[Notification] Skipped notification: student ${user.displayId} ${user.name} is not active studying (status: ${liveStudentStatus})`);
+        return;
+      }
 
       let semesterStats = { present: 0, late: 0, leave: 0, absent: 0, noCheckout: 0, officialTravel: 0 };
       if (semesterSnap.exists()) {
@@ -1528,6 +1550,7 @@ const CheckinOutPage: React.FC = () => {
       // สร้าง User object ใหม่พร้อมข้อมูลสถิติภาคเรียนและคะแนนพฤติกรรมล่าสุด
       const userWithSemesterStats: FoundUser = {
         ...user,
+        studentStatus: liveStudentStatus,
         attendanceStats: semesterStats,
         behaviorScore: liveBehaviorScore,
       };
@@ -2059,8 +2082,13 @@ const CheckinOutPage: React.FC = () => {
     });
 
     if (user.type === "student") {
-      console.log(`[LINE] Triggering ${type} notification for`, user.displayId, user.name, "status:", status);
-      await sendLineNotification({ ...user, behaviorScore: behaviorScoreAfterUpdate }, status, timeStr, type);
+      const studentStatus = user.studentStatus || (user as any).status;
+      if (!studentStatus || isActiveStudentStatus(studentStatus)) {
+        console.log(`[LINE] Triggering ${type} notification for`, user.displayId, user.name, "status:", status);
+        await sendLineNotification({ ...user, behaviorScore: behaviorScoreAfterUpdate }, status, timeStr, type);
+      } else {
+        console.log(`[Attendance] Skipped notifications for non-studying student: ${user.displayId} ${user.name} (status: ${studentStatus})`);
+      }
     } else if (user.type === "teacher") {
       console.log(`[LINE] Triggering ${type} notification for teacher`, user.displayId, user.name, "status:", status);
       await sendTeacherLineNotification(user, status, timeStr, type);

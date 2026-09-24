@@ -11,6 +11,7 @@ import { termsOfUseSections } from "@/pages/Legal/TermsOfUsePage";
 import { LegalSection } from "@/pages/Legal/LegalPageLayout";
 
 import { getOrFetchAcademicYear } from "@/utils/academicYearUtils";
+import LoadingScreen from "./LoadingScreen";
 
 interface ConsentIdentity {
   consentKey: string;
@@ -25,10 +26,23 @@ interface ConsentIdentity {
  * เพื่อให้ผู้ปกครองและนักเรียนคลิกยอมรับเพียง "ปีการศึกษาละ 1 ครั้ง"
  * แม้จะออกจากระบบหรือเข้าใหม่ (Anonymous Auth UID เปลี่ยน) ก็จะไม่ต้องกดซ้ำ
  */
+// ปีการศึกษาต้องอ่านจาก Firestore ก่อนถึงจะรู้ consentKey — แต่ตอนเข้าเว็บครั้งถัดๆ ไปผู้ใช้เคยยอมรับแล้ว
+// (localStorage) จึงเก็บปีล่าสุดไว้เพื่อตัดสินได้ทันทีโดยไม่ต้องรอ network (cachedOnly) แล้วค่อยยืนยันซ้ำเบื้องหลัง
+const getAcademicYearForConsent = async (schoolId: string | null, cachedOnly: boolean): Promise<string | null> => {
+  const cacheKey = `consent_academic_year_${schoolId || "none"}`;
+  if (cachedOnly) {
+    try { return localStorage.getItem(cacheKey); } catch { return null; }
+  }
+  const year = await getOrFetchAcademicYear(db, schoolId);
+  try { localStorage.setItem(cacheKey, year); } catch { /* ignore */ }
+  return year;
+};
+
 const resolveConsentIdentity = async (
   reduxSchoolId: string | null | undefined,
-  firebaseUid: string | undefined
-): Promise<ConsentIdentity> => {
+  firebaseUid: string | undefined,
+  cachedOnly = false
+): Promise<ConsentIdentity | null> => {
   const userType = localStorage.getItem("currentUserType");
 
   if (userType === "student") {
@@ -37,7 +51,8 @@ const resolveConsentIdentity = async (
       if (raw) {
         const { schoolId, studentId } = JSON.parse(raw);
         if (schoolId && studentId) {
-          const academicYear = await getOrFetchAcademicYear(db, schoolId);
+          const academicYear = await getAcademicYearForConsent(schoolId, cachedOnly);
+          if (!academicYear) return null;
           return {
             consentKey: `student_${schoolId}_${studentId}_${academicYear}`,
             schoolId,
@@ -60,7 +75,8 @@ const resolveConsentIdentity = async (
         const schoolId = first?.schoolId || null;
         const parentId = phone || first?.studentDocId || "default";
         if (schoolId) {
-          const academicYear = await getOrFetchAcademicYear(db, schoolId);
+          const academicYear = await getAcademicYearForConsent(schoolId, cachedOnly);
+          if (!academicYear) return null;
           return {
             consentKey: `parent_${schoolId}_${parentId}_${academicYear}`,
             schoolId,
@@ -78,7 +94,8 @@ const resolveConsentIdentity = async (
   // ครู/แอดมิน ที่มีบัญชี Firebase จริง
   const schoolId = reduxSchoolId || null;
   const uid = firebaseUid || "anonymous";
-  const academicYear = await getOrFetchAcademicYear(db, schoolId);
+  const academicYear = await getAcademicYearForConsent(schoolId, cachedOnly);
+  if (!academicYear) return null;
   return {
     consentKey: `teacher_${uid}_${academicYear}`,
     schoolId,
@@ -138,8 +155,26 @@ const ConsentGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     let isMounted = true;
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      const identity = await resolveConsentIdentity(reduxSchoolId, firebaseUser?.uid);
+      // ทางลัด: เคยยอมรับแล้ว (มีปีการศึกษาและ flag ในเครื่อง) → ปลดล็อกทันทีโดยไม่รอ Firestore
+      const fastIdentity = await resolveConsentIdentity(reduxSchoolId, firebaseUser?.uid, true);
+      if (fastIdentity && localStorage.getItem(`consent_accepted_${fastIdentity.consentKey}`) === "true") {
+        if (isMounted) {
+          setConsentIdentity(fastIdentity);
+          setStatus("granted");
+        }
+        // ยืนยันปีการศึกษาล่าสุดเบื้องหลัง — ถ้าเปลี่ยนปีจนคีย์ต่างไป ค่อยเช็กสิทธิ์ใหม่ตามปกติ
+        const freshIdentity = await resolveConsentIdentity(reduxSchoolId, firebaseUser?.uid);
+        if (!freshIdentity || freshIdentity.consentKey === fastIdentity.consentKey) return;
+        await evaluateConsent(freshIdentity, firebaseUser);
+        return;
+      }
 
+      const identity = await resolveConsentIdentity(reduxSchoolId, firebaseUser?.uid);
+      if (!identity) return;
+      await evaluateConsent(identity, firebaseUser);
+    });
+
+    const evaluateConsent = async (identity: ConsentIdentity, firebaseUser: import("firebase/auth").User | null) => {
       if (!identity.consentKey) {
         if (isMounted) setStatus("granted");
         return;
@@ -191,7 +226,7 @@ const ConsentGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         // fail-open: อย่าให้ปัญหาเครือข่ายชั่วคราวล็อกผู้ใช้ทั้งระบบออกจากระบบพร้อมกัน
         if (isMounted) setStatus("granted");
       }
-    });
+    };
 
     return () => {
       isMounted = false;
@@ -254,9 +289,7 @@ const ConsentGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return (
       <>
         {children}
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-gray-50/80 backdrop-blur-sm dark:bg-[#15161a]/80">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600" />
-        </div>
+        <LoadingScreen />
       </>
     );
   }

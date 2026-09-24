@@ -1,4 +1,5 @@
 import React from 'react';
+import LoadingScreen from './LoadingScreen';
 import { Navigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
@@ -17,11 +18,7 @@ const ActivityModeGuard: React.FC<{ children: React.ReactNode }> = ({ children }
   const blocked = activityMode === 'course-based';
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (blocked) {

@@ -177,6 +177,7 @@ export const ROUTE_REGISTRY: RouteDefinition[] = [
   { key: 'eval_clubs',             path: '/academic/evaluation/clubs',             label: 'ประเมินชุมนุม',               category: 'วิชาการ - คะแนนและประเมิน', defaultRoles: TEACHER_OPERATIONAL },
   { key: 'eval_guidance',          path: '/academic/evaluation/guidance',          label: 'ประเมินแนะแนว',               category: 'วิชาการ - คะแนนและประเมิน', defaultRoles: TEACHER_OPERATIONAL },
   { key: 'porbor5_tracking_report',path: '/academic/porbor5-tracking-report',       label: 'รายงานติดตามการส่ง ปพ.5',     category: 'วิชาการ - คะแนนและประเมิน', defaultRoles: [...TEACHER_OPERATIONAL, ...ACADEMIC_MANAGEMENT] },
+  { key: 'porbor5_submission_memo',path: '/academic/porbor5-submission-memo',       label: 'บันทึกข้อความส่ง ปพ.5',       category: 'วิชาการ - คะแนนและประเมิน', defaultRoles: [...TEACHER_OPERATIONAL, ...ACADEMIC_MANAGEMENT] },
 
   // ──────────────────────────────── วิชาการ - กิจกรรมและชุมนุม ────────────────────────────────
   { key: 'club_management',          path: '/academic/club-management',           label: 'จัดการชุมนุม',                  category: 'วิชาการ - กิจกรรมและชุมนุม', defaultRoles: ACADEMIC_MANAGEMENT },

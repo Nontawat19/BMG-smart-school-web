@@ -29,7 +29,8 @@ import { getStatusKey as getPeriodStatusKey } from "@/utils/periodSummaryUtils";
 import { fetchCalendar } from "@/store/slices/calendarSlice";
 import { getActiveSortedTeachers } from "@/utils/teacherSortUtils";
 import { CLASSES, getGroupPersonnel } from "@/utils/schoolUtils";
-import { getEffectivePeriodEnd, getScheduleSlotCandidates, getTimetableDisplayPeriods, normalizePeriodSettings } from "@/utils/scheduleDisplayUtils";
+import { normalizePeriodSettings } from "@/utils/scheduleDisplayUtils";
+import PersonalScheduleTable from "@/components/Schedule/PersonalScheduleTable";
 import {
     FlaggedCourse, StudentFlagRow, RemediationWindowConfig,
     fetchFlaggedStudents, isRemediationWindowOpen,
@@ -1152,13 +1153,22 @@ const ProfilePage: React.FC = () => {
           });
 
           // Helpers
-          const formatClassNamesLocal = (classIds: any, groupNum?: number, roomNum?: string | number): string => {
+          const formatClassNamesLocal = (classIds: any, roomNum?: string | number): string => {
             const ids = Array.isArray(classIds) ? classIds : [classIds].filter(Boolean);
-            const roomSuffix = roomNum ? `/${roomNum}` : '';
-            return ids.map(c => {
-              const baseName = CLASSES[c as keyof typeof CLASSES] || c;
-              return `${baseName}${roomSuffix}`;
-            }).join(', ');
+            return ids.map(rawClassId => {
+              const classText = String(rawClassId || '').trim();
+              if (!classText) return '';
+
+              if (classText.includes('/')) {
+                const [levelPart, roomPart] = classText.split('/');
+                const room = roomPart?.trim();
+                const baseName = CLASSES[levelPart.trim() as keyof typeof CLASSES] || levelPart.trim();
+                return `${baseName}${room ? `/${room}` : ''}`;
+              }
+
+              const baseName = CLASSES[classText as keyof typeof CLASSES] || classText;
+              return `${baseName}${roomNum ? `/${roomNum}` : ''}`;
+            }).filter(Boolean).join(' + ');
           };
 
           const findAssignmentLocal = (course: any, tId: string, groupNum: number) => {
@@ -1188,22 +1198,52 @@ const ProfilePage: React.FC = () => {
                 coursesArray.forEach((course: any) => {
                   if (!course) return;
 
-                  const groupNum = course.groupNumber || 1;
+                  const groupNum = Number(course.groupNumber || 1) || 1;
                   const assignment = findAssignmentLocal(course, teacherId, groupNum);
                   const courseWithGroup = { ...course, groupNumber: groupNum };
 
                   const roomIds = assignment?.roomIds || course.room || [];
-                  let roomDisplay = roomIds.length > 0 && !roomIds.includes('all')
-                    ? roomIds.map((id: string) => roomsMap[id] || id).join(', ')
-                    : '';
+                  const normalizedRoomIds = Array.isArray(roomIds) ? roomIds : [roomIds].filter(Boolean);
+
+                  let roomDisplay = '';
+                  if (normalizedRoomIds.length > 0 && !normalizedRoomIds.includes('all')) {
+                    roomDisplay = normalizedRoomIds.map((id: string) => {
+                      if (roomsMap[id]) return roomsMap[id];
+                      // ป้องกันการแสดง UID ยาวของ Firestore หากไม่มีชื่อห้องใน roomsMap
+                      if (typeof id === 'string' && id.length >= 15 && /^[a-zA-Z0-9_-]+$/.test(id)) {
+                        return assignment?.room ? String(assignment.room) : '';
+                      }
+                      return id;
+                    }).filter(Boolean).join(', ');
+                  }
+
+                  if (!roomDisplay && assignment?.room) {
+                    roomDisplay = String(assignment.room);
+                  }
+
+                  if (!roomDisplay && course?.room && !Array.isArray(course.room)) {
+                    const cRoom = String(course.room);
+                    if (!(cRoom.length >= 15 && /^[a-zA-Z0-9_-]+$/.test(cRoom))) {
+                      roomDisplay = cRoom;
+                    }
+                  }
 
                   if (!roomDisplay && groupNum) {
                     roomDisplay = String(groupNum);
                   }
 
                   const displayClassName = assignment?.classLevels?.length
-                    ? formatClassNamesLocal(assignment.classLevels, groupNum, assignment.room)
-                    : formatClassNamesLocal(data.classId, groupNum, course.room);
+                    ? formatClassNamesLocal(assignment.classLevels, assignment.room)
+                    : formatClassNamesLocal(data.classId, Array.isArray(course.room) ? undefined : course.room);
+
+                  const entryData = {
+                    course: courseWithGroup,
+                    className: displayClassName,
+                    roomDisplay,
+                    rawClassId: data.classId,
+                    classLevels: assignment?.classLevels,
+                    assignmentRoom: assignment?.room || (Array.isArray(course.room) ? undefined : course.room),
+                  };
 
                   if (merged[slot] && merged[slot].course.id === course.id && merged[slot].course.groupNumber === groupNum) {
                     const existingClass = merged[slot].className;
@@ -1211,7 +1251,7 @@ const ProfilePage: React.FC = () => {
                       merged[slot].className = `${existingClass}, ${displayClassName}`;
                     }
                   } else {
-                    merged[slot] = { course: courseWithGroup, className: displayClassName, roomDisplay };
+                    merged[slot] = entryData;
                   }
                 });
               }
@@ -1569,138 +1609,7 @@ const ProfilePage: React.FC = () => {
 
   const filteredRecords = getFilteredAttendance();
 
-  const getCourseTitle = (course: any) => course?.title || course?.courseName || course?.subjectName || "วิชาไม่ระบุชื่อ";
-  const getCourseCode = (course: any) => course?.code || course?.courseCode || course?.subjectCode || "";
-  const stripGroupLabel = (value: string = "") => value.replace(/\s*\(กลุ่ม\s*\d+\)/g, '').trim();
 
-  const getScheduleEntryForPeriod = (dayKey: string, period: any, periodIndex: number) => {
-    const candidates = getScheduleSlotCandidates(dayKey, period, periodIndex);
-    const slotKey = candidates.find(key => schedule[key]);
-    return {
-      slotKey: slotKey || candidates[0] || `${dayKey}-${periodIndex}`,
-      entry: slotKey ? schedule[slotKey] : undefined
-    };
-  };
-
-  const getDayCells = (dayKey: string) => {
-    const cells: any[] = [];
-    const periods = getTimetableDisplayPeriods(schedulePeriodSettings);
-    let i = 0;
-    while (i < periods.length) {
-      const p = periods[i];
-      
-      if (p.id === 'lunch') {
-        cells.push({
-          type: 'lunch',
-          period: p,
-          colSpan: 1
-        });
-        i++;
-        continue;
-      }
-      
-      const { slotKey, entry } = getScheduleEntryForPeriod(dayKey, p, i);
-      
-      const special = scheduleSpecialPeriods.find(sp => 
-        (sp.linkedPeriodId === p.id || (!p.id.startsWith('period') && sp.id === p.id)) && 
-        (!sp.day || sp.day === dayKey || sp.day === 'all')
-      );
-      
-      const club = scheduleClubs.find(c => 
-        c.responsibleTeacherIds?.includes(profile?.docId) &&
-        c.scheduleSlot === slotKey
-      );
-
-      if (special) {
-        cells.push({
-          type: 'special',
-          special,
-          period: p,
-          colSpan: 1
-        });
-        i++;
-        continue;
-      }
-
-      if (club) {
-        cells.push({
-          type: 'club',
-          club,
-          period: p,
-          colSpan: 1
-        });
-        i++;
-        continue;
-      }
-
-      if (!entry) {
-        cells.push({
-          type: 'empty',
-          period: p,
-          colSpan: 1
-        });
-        i++;
-        continue;
-      }
-
-      let colSpan = 1;
-      let nextIndex = i + 1;
-      while (nextIndex < periods.length) {
-        const nextPeriod = periods[nextIndex];
-        if (nextPeriod.id === 'lunch') break;
-        
-        const { slotKey: nextSlotKey, entry: nextEntry } = getScheduleEntryForPeriod(dayKey, nextPeriod, nextIndex);
-        
-        const nextSpecial = scheduleSpecialPeriods.find(sp => 
-          (sp.linkedPeriodId === nextPeriod.id || (!nextPeriod.id.startsWith('period') && sp.id === nextPeriod.id)) && 
-          (!sp.day || sp.day === dayKey || sp.day === 'all')
-        );
-        const nextClub = scheduleClubs.find(c => 
-          c.responsibleTeacherIds?.includes(profile?.docId) &&
-          c.scheduleSlot === nextSlotKey
-        );
-
-        if (nextSpecial || nextClub) break;
-
-        if (nextEntry && 
-            nextEntry.course.id === entry.course.id && 
-            Number(nextEntry.course.groupNumber || 1) === Number(entry.course.groupNumber || 1)) {
-          colSpan++;
-          nextIndex++;
-        } else {
-          break;
-        }
-      }
-
-      cells.push({
-        type: 'course',
-        entry,
-        period: p,
-        colSpan
-      });
-      i += colSpan;
-    }
-    return cells;
-  };
-
-  const getCourseColors = (code: string) => {
-    const colors = [
-      { bg: 'bg-indigo-50 dark:bg-indigo-950/40', text: 'text-indigo-800 dark:text-indigo-300', border: 'border-t-indigo-100 border-b-indigo-100 dark:border-t-indigo-900/50 dark:border-b-indigo-900/50' },
-      { bg: 'bg-teal-50 dark:bg-teal-950/40', text: 'text-teal-800 dark:text-teal-300', border: 'border-t-teal-100 border-b-teal-100 dark:border-t-teal-900/50 dark:border-b-teal-900/50' },
-      { bg: 'bg-violet-50 dark:bg-violet-950/40', text: 'text-violet-800 dark:text-violet-300', border: 'border-t-violet-100 border-b-violet-100 dark:border-t-violet-900/50 dark:border-b-violet-900/50' },
-      { bg: 'bg-sky-50 dark:bg-sky-950/40', text: 'text-sky-800 dark:text-sky-300', border: 'border-t-sky-100 border-b-sky-100 dark:border-t-sky-900/50 dark:border-b-sky-900/50' },
-      { bg: 'bg-rose-50 dark:bg-rose-950/40', text: 'text-rose-800 dark:text-rose-300', border: 'border-t-rose-100 border-b-rose-100 dark:border-t-rose-900/50 dark:border-b-rose-900/50' },
-      { bg: 'bg-amber-50 dark:bg-amber-950/40', text: 'text-amber-800 dark:text-amber-300', border: 'border-t-amber-100 border-b-amber-100 dark:border-t-amber-900/50 dark:border-b-amber-900/50' },
-      { bg: 'bg-fuchsia-50 dark:bg-fuchsia-950/40', text: 'text-fuchsia-800 dark:text-fuchsia-300', border: 'border-t-fuchsia-100 border-b-fuchsia-100 dark:border-t-fuchsia-900/50 dark:border-b-fuchsia-900/50' },
-    ];
-    
-    let hash = 0;
-    for (let i = 0; i < code.length; i++) {
-      hash = code.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    const index = Math.abs(hash) % colors.length;
-    return colors[index];
-  };
 
   const homeroomGradeValue = String(profile?.homeroomGrade || "").trim();
   const homeroomGradeParts = homeroomGradeValue.split("/").map((part) => part.trim()).filter(Boolean);
@@ -2136,6 +2045,16 @@ const ProfilePage: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* แถบหมายเหตุแบบกะทัดรัด ประหยัดพื้นที่ */}
+                  <div className="px-3 py-1.5 rounded-lg bg-orange-50/90 dark:bg-orange-950/30 border border-orange-300 dark:border-orange-500/50 flex items-center gap-2 text-xs text-orange-950 dark:text-orange-100 shadow-2xs">
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-red-600 text-white text-[10px] font-black tracking-wide shrink-0">
+                      หมายเหตุ
+                    </span>
+                    <span className="font-semibold truncate sm:whitespace-normal">
+                      ครูสามารถเช็คชื่อบนตารางสอนได้ (คลิกที่คาบเรียนในตารางเพื่อทำการเช็คชื่อได้ทันที)
+                    </span>
+                  </div>
+
                   {isScheduleLoading ? (
                     <div className="flex flex-col justify-center items-center py-12">
                       <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600 mb-3"></div>
@@ -2153,142 +2072,16 @@ const ProfilePage: React.FC = () => {
                     </div>
                   ) : (
                     <div className="space-y-6">
-                      {/* Table Container - overflow-x-hidden to fully satisfy user constraint of NO bottom scrollbar */}
-                      <div className="w-full overflow-x-hidden border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-[#1a1b1e] shadow-sm">
-                        <table className="w-full table-fixed border-collapse text-[10px] sm:text-xs">
-                          <thead>
-                            <tr className="bg-gray-50 dark:bg-[#202125]/50 border-b border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300">
-                              {/* Day/Period Column Header */}
-                              <th className="p-1.5 text-center font-bold border-r border-gray-200 dark:border-gray-700" style={{ width: '8%' }}>
-                                วัน / คาบ
-                              </th>
-                              {getTimetableDisplayPeriods(schedulePeriodSettings).map((p, index) => {
-                                const isLunch = p.id === 'lunch';
-                                const displayPeriods = getTimetableDisplayPeriods(schedulePeriodSettings);
-                                const teachingCount = Math.max(1, displayPeriods.filter(period => period.id !== 'lunch').length);
-                                const w = isLunch ? '6%' : `${86 / teachingCount}%`;
-                                const effectiveEnd = getEffectivePeriodEnd(displayPeriods, p, index);
-                                return (
-                                  <th key={p.id} className="p-1 text-center font-bold border-r last:border-none border-gray-200 dark:border-gray-700 leading-tight" style={{ width: w }}>
-                                    <div className="font-semibold text-[8px] sm:text-[10px] truncate">{isLunch ? 'พัก' : p.label}</div>
-                                    <div className="text-[7px] sm:text-[8px] text-gray-400 dark:text-gray-500 font-normal mt-0.5 whitespace-normal">{p.startTime} - {effectiveEnd}</div>
-                                  </th>
-                                );
-                              })}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {Object.entries(DAYS).map(([dayKey, dayName]) => {
-                              const dayBorder = {
-                                mon: 'border-l-4 border-l-[#eedc32] bg-yellow-50/5 dark:bg-yellow-950/5',
-                                tue: 'border-l-4 border-l-[#ea77bb] bg-pink-50/5 dark:bg-pink-950/5',
-                                wed: 'border-l-4 border-l-[#4fb56a] bg-green-50/5 dark:bg-green-950/5',
-                                thu: 'border-l-4 border-l-[#f47c24] bg-orange-50/5 dark:bg-orange-950/5',
-                                fri: 'border-l-4 border-l-[#4e9beb] bg-sky-50/5 dark:bg-sky-950/5',
-                              }[dayKey] || '';
-
-                              const dayLabelBg = {
-                                mon: 'bg-yellow-500 text-white',
-                                tue: 'bg-pink-500 text-white',
-                                wed: 'bg-green-500 text-white',
-                                thu: 'bg-orange-500 text-white',
-                                fri: 'bg-sky-500 text-white',
-                              }[dayKey] || 'bg-gray-500 text-white';
-
-                              // Call helper to get cells for this day
-                              const cells = getDayCells(dayKey);
-
-                              return (
-                                <tr key={dayKey} className="h-20 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50/50 dark:hover:bg-gray-800/10 transition-colors">
-                                  {/* Day Name Column */}
-                                  <td className={`p-1.5 font-bold border-r border-gray-200 dark:border-gray-700 text-center align-middle ${dayBorder}`}>
-                                    <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[9px] sm:text-[10px] font-bold shadow-sm ${dayLabelBg}`}>
-                                      {DAY_SHORT_LABELS[dayKey] || dayName.substring(0, 1)}
-                                    </span>
-                                  </td>
-                                  
-                                  {/* Period Cells */}
-                                  {cells.map((cell, idx) => {
-                                    if (cell.type === 'lunch') {
-                                      return (
-                                        <td key={`lunch-${dayKey}`} className="border-r last:border-none border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/20 text-gray-400 dark:text-gray-500 font-bold select-none p-1 text-center align-middle" colSpan={cell.colSpan}>
-                                          <div className="flex h-full min-h-[72px] flex-col items-center justify-center gap-0.5 text-[7px] sm:text-[8px] leading-none font-bold select-none opacity-75">
-                                            <span className="whitespace-nowrap">พัก</span>
-                                            <span className="whitespace-nowrap">กลางวัน</span>
-                                          </div>
-                                        </td>
-                                      );
-                                    }
-
-                                    if (cell.type === 'empty') {
-                                      return (
-                                        <td key={`empty-${dayKey}-${idx}`} className="border-r last:border-none border-gray-200 dark:border-gray-700 bg-gray-50/20 dark:bg-[#202125]/10 text-gray-300 dark:text-gray-700 text-center align-middle p-1" colSpan={cell.colSpan}>
-                                          <span className="text-[7px] sm:text-[9px] select-none font-medium opacity-35">-</span>
-                                        </td>
-                                      );
-                                    }
-
-                                    if (cell.type === 'special') {
-                                      return (
-                                        <td key={`special-${dayKey}-${idx}`} className="border-r last:border-none border-r-gray-200 dark:border-r-gray-700 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 text-center align-middle p-1 border-t border-b border-t-emerald-100 border-b-emerald-100 dark:border-t-emerald-900/50 dark:border-b-emerald-900/50" colSpan={cell.colSpan}>
-                                          <div className="flex min-h-[72px] flex-col items-center justify-center">
-                                          <div className="font-bold text-[8px] sm:text-[9px] leading-tight truncate">{cell.special.title}</div>
-                                          {cell.special.description && (
-                                            <div className="text-[6px] sm:text-[7px] text-emerald-600 dark:text-emerald-400 mt-0.5 truncate">{cell.special.description}</div>
-                                          )}
-                                          </div>
-                                        </td>
-                                      );
-                                    }
-
-                                    if (cell.type === 'club') {
-                                      return (
-                                        <td key={`club-${dayKey}-${idx}`} className="border-r last:border-none border-r-gray-200 dark:border-r-gray-700 bg-teal-50 dark:bg-teal-950/20 text-teal-800 dark:text-teal-300 text-center align-middle p-1 border-t border-b border-t-teal-100 border-b-teal-100 dark:border-t-teal-900/50 dark:border-b-teal-900/50" colSpan={cell.colSpan}>
-                                          <div className="flex min-h-[72px] flex-col items-center justify-center">
-                                            <div className="font-bold text-[8px] sm:text-[9px] leading-tight truncate">{cell.club.clubName}</div>
-                                            <div className="text-[7px] sm:text-[8px] text-teal-600 dark:text-teal-400 mt-0.5 truncate">กิจกรรมชุมนุม</div>
-                                          </div>
-                                        </td>
-                                      );
-                                    }
-
-                                    // Active course cell
-                                    const courseTitle = getCourseTitle(cell.entry.course);
-                                    const courseCode = getCourseCode(cell.entry.course);
-                                    const className = stripGroupLabel(cell.entry.className);
-                                    const colors = getCourseColors(courseCode);
-                                    return (
-                                      <td key={`course-${dayKey}-${idx}`} className={`border-r last:border-none border-r-gray-200 dark:border-r-gray-700 text-center align-middle p-0 cursor-default border-t border-b ${colors.bg} ${colors.text} ${colors.border}`} colSpan={cell.colSpan}>
-                                        <div className="flex min-h-[72px] flex-col items-center justify-center gap-0.5 px-1.5 py-1.5">
-                                          {/* Course name */}
-                                          <div className="max-w-full font-black text-[8px] sm:text-[10px] md:text-[11px] leading-tight line-clamp-2" title={courseTitle}>
-                                            {courseTitle}
-                                          </div>
-                                          {/* Course code */}
-                                          <div className="max-w-full text-[7px] sm:text-[8px] font-semibold opacity-70 truncate">
-                                            {courseCode}
-                                          </div>
-                                          {/* Class name / Group */}
-                                          <div className="max-w-full text-[7px] sm:text-[8px] font-bold text-gray-750 dark:text-gray-300 truncate">
-                                            {className}
-                                          </div>
-                                          {/* Physical teaching room */}
-                                          {cell.entry.roomDisplay && (
-                                            <div className="mt-0.5 inline-flex max-w-full items-center justify-center gap-1 rounded-full bg-white/55 dark:bg-black/15 px-1.5 py-0.5 text-[7px] sm:text-[8px] font-black text-emerald-600 dark:text-emerald-400">
-                                              <span className="h-1 w-1 shrink-0 rounded-full bg-emerald-400"></span>
-                                              <span className="truncate">{cell.entry.roomDisplay}</span>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </td>
-                                    );
-                                  })}
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
+                      <PersonalScheduleTable
+                        schedule={schedule}
+                        periodSettings={schedulePeriodSettings}
+                        specialPeriods={scheduleSpecialPeriods}
+                        clubs={scheduleClubs}
+                        viewerId={profile?.docId}
+                        mode="teacher"
+                        academicYear={scheduleAcademicYear}
+                        semester={scheduleCurrentTerm}
+                      />
 
                       {/* Teaching Workload Summary Table */}
                       <div className="bg-gray-50 dark:bg-gray-800/30 rounded-xl p-5 border border-gray-150 dark:border-gray-750 space-y-4">

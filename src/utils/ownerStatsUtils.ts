@@ -561,7 +561,8 @@ const calculateSchoolDashboardSummary = async (
 export const fetchSchoolDashboardSummary = async (
   db: Firestore,
   schoolId: string,
-  fallback: any = {}
+  fallback: any = {},
+  options: { preferCache?: boolean } = {}
 ) => {
   if (!schoolId) return mapSchoolSummary(fallback);
 
@@ -572,6 +573,12 @@ export const fetchSchoolDashboardSummary = async (
     : mapSchoolSummary(fallback);
 
   if (!shouldRefreshSchoolSummary(cachedSummary, summarySnap.exists())) {
+    return cachedSummary;
+  }
+
+  // ผู้เรียกที่ต้องการแค่จำนวนครู/นักเรียน (เช่นหน้าแรก) ไม่ควรต้องรอคำนวณ usage ใหม่ทั้งโรงเรียน
+  // (อ่านครู+นักเรียนทั้งหมด + count 16 คอลเลกชัน) ซึ่งเกิดซ้ำทุกครั้งที่เข้าเว็บถ้าผู้ใช้ไม่มีสิทธิ์เขียนแคชกลับ
+  if (options.preferCache && summarySnap.exists() && cachedSummary.teacherCount > 0) {
     return cachedSummary;
   }
 

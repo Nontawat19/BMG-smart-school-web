@@ -25,6 +25,7 @@ import { fetchStudentReportSummary, syncStudentReportSummary, normalizeStudentRe
 import { isArchivedStudentStatus, normalizeStudentStatus } from "@/utils/studentStatusUtils";
 import { fetchSchoolDashboardSummary } from "@/utils/ownerStatsUtils";
 import { useSchoolScope } from "@/hooks/useEffectiveSchool";
+import TeacherDailyQuickTabs from "./components/TeacherDailyQuickTabs";
 
 interface CalendarEvent { type?: string; description?: string; scheduleDay?: string; }
 interface NewsItem { id: string; title?: string; content?: string; imageUrl?: string; linkUrl?: string; linkText?: string; isActive?: boolean; createdAt?: any; viewCount?: number; }
@@ -882,7 +883,11 @@ const HomePage = () => {
                 
                 // Fetch directly to match the exact "กำลังศึกษาอยู่" criteria for the current academic year
                 const studentsCollectionRef = collection(db, "school-settings", schoolId, "students");
-                const studentsSnapshot = await getDocs(studentsCollectionRef);
+                // อ่านรายชื่อนักเรียนกับสรุปจำนวนครูพร้อมกัน แทนการรอทีละอย่าง
+                const [studentsSnapshot, schoolSummary] = await Promise.all([
+                    getDocs(studentsCollectionRef),
+                    fetchSchoolDashboardSummary(db, schoolId, {}, { preferCache: true }),
+                ]);
                 
                 let activeCount = 0;
                 const byLevel: Record<string, number> = {};
@@ -918,9 +923,9 @@ const HomePage = () => {
                     byLevel: byLevel
                 });
                 
-                const schoolSummary = await fetchSchoolDashboardSummary(db, schoolId);
                 setTeacherReport({ total: schoolSummary.teacherCount || 0, byDepartment: {} });
-                try {
+                // รายงานใบลานักเรียนกับรายงานวิชาการไม่ขึ้นต่อกัน — รันคู่ขนานแทนรอทีละชุด
+                const leaveReportTask = (async () => { try {
                     const todayStr = new Date().toISOString().split('T')[0];
                     const studentLeaveSnap = await getDocs(query(collection(db, "school-settings", schoolId, "leave_summary"), orderBy("createdAt", "desc"), limit(50)));
                     const rawStudentLeaveList = studentLeaveSnap.docs.map(d => {
@@ -1011,7 +1016,7 @@ const HomePage = () => {
                         studentOfficial: sOfficial,
                         recentLeaves: studentLeaveList.slice(0, 5)
                     }));
-                } catch (e) { console.warn("Leave report fetch (partial):", e); }
+                } catch (e) { console.warn("Leave report fetch (partial):", e); } })();
 
                 try {
                     // enrollments ใช้แค่จำนวนรวม (totalEnrollments ด้านล่าง) ไม่เคยใช้ข้อมูลรายเอกสารเลย —
@@ -1576,6 +1581,7 @@ const HomePage = () => {
                     }
                     setAcademicReport({ totalCourses: totalOpenCourses, totalClubs: clubsSnap.size, totalEnrollments: enrollmentsCountSnap.data().count, todaySchedules, compensationScheduleDay });
                 } catch (e) { console.warn("Academic report fetch:", e); }
+                await leaveReportTask;
             } catch (error) { console.error("Error fetching report data:", error); }
             finally { setReportLoading(false); }
         };
@@ -1746,7 +1752,7 @@ const HomePage = () => {
                     )}
 
                     {/* ENHANCED PREMIUM HEADER - SINGLE ROW */}
-                    <div className="bg-white dark:bg-[#2a2b2f] rounded-[24px] p-4 sm:p-5 mb-8 border border-gray-100 dark:border-gray-800 shadow-sm transition-all duration-300 relative overflow-hidden group">
+                    <div className="bg-white dark:bg-[#2a2b2f] rounded-[24px] p-4 sm:p-5 mb-3 sm:mb-4 border border-gray-100 dark:border-gray-800 shadow-sm transition-all duration-300 relative overflow-hidden group">
                         {/* Decorative Background Elements */}
                         <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-500/5 rounded-full -mr-24 -mt-24 blur-3xl pointer-events-none"></div>
 
@@ -1816,11 +1822,8 @@ const HomePage = () => {
                         </div>
                     </div>
 
-
-
-
-
-
+                    {/* DAILY TEACHER SHORTCUTS - HORIZONTAL TAB MENU */}
+                    <TeacherDailyQuickTabs schoolId={effectiveSchoolId || ''} />
 
                     {/* SYSTEM REPORT - For all roles except Super Admin */}
                     {showSchoolDashboard && (

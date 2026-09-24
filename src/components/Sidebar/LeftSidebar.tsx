@@ -38,7 +38,8 @@ import {
   FaExchangeAlt,
   FaGraduationCap,
   FaChartBar,
-  FaShieldAlt
+  FaShieldAlt,
+  FaHome
 } from "react-icons/fa";
 
 import defaultProfile from "@/assets/profile.png";
@@ -317,6 +318,10 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
           <nav className="flex flex-col gap-4" onClick={(e) => { if ((e.target as HTMLElement).closest('a')) handleLinkClick() }}>
             {isStudent ? (
               <div className="flex flex-col gap-1">
+                <NavLink to="/home" className={navLinkClasses}>
+                  <FaHome className="text-lg min-w-[18px]" />
+                  <span>หน้าหลัก</span>
+                </NavLink>
                 <NavLink to="/profile" className={navLinkClasses}>
                   <FaUserTie className="text-lg min-w-[18px]" />
                   <span>ข้อมูลส่วนตัว</span>
@@ -334,6 +339,10 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
               </div>
             ) : isGeneralUserOnly ? (
               <div className="flex flex-col gap-1">
+                <NavLink to="/home" className={navLinkClasses}>
+                  <FaHome className="text-lg min-w-[18px]" />
+                  <span>หน้าหลัก</span>
+                </NavLink>
                 <NavLink to="/profile" className={navLinkClasses}>
                   <FaUserTie className="text-lg min-w-[18px]" />
                   <span>ข้อมูลส่วนตัว</span>
@@ -351,6 +360,10 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
               </div>
             ) : isPwaMode ? (
               <div className="flex flex-col gap-1">
+                <NavLink to="/home" className={navLinkClasses}>
+                  <FaHome className="text-lg min-w-[18px]" />
+                  <span>หน้าหลัก</span>
+                </NavLink>
                 <NavLink to={PWA_ATTENDANCE_HUB_PATH} className={navLinkClasses}>
                   <FaUserCheck className="text-lg min-w-[18px]" />
                   <span>ระบบเช็คชื่อ</span>
@@ -374,6 +387,10 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
               </div>
             ) : isAttendanceEntryOnly(currentUser?.role) ? (
               <div className="flex flex-col gap-1">
+                <NavLink to="/home" className={navLinkClasses}>
+                  <FaHome className="text-lg min-w-[18px]" />
+                  <span>หน้าหลัก</span>
+                </NavLink>
                 <NavLink to={enableCheckinOutSystem ? "/attendance/checkin-out" : (isEnabled('flagCeremony') ? "/academic/flag-ceremony" : "/home")} className={navLinkClasses}>
                   <FaUserCheck className="text-lg min-w-[18px]" />
                   <span>{enableCheckinOutSystem ? "ลงเวลาเข้า-ออก" : "เช็คชื่อเข้าแถว"}</span>
@@ -401,6 +418,10 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
                 {isEnabled('academic') && (
                   <CanAccess roles={STAFF_ACCESS}>
                     <div className="flex flex-col gap-1">
+                      <NavLink to="/home" className={navLinkClasses}>
+                        <FaHome className="text-lg min-w-[18px]" />
+                        <span>หน้าหลัก</span>
+                      </NavLink>
                       <CanAccess roles={ACADEMIC_MANAGEMENT}>
                         <NavLink to="/academic/hub/registration" className={navLinkClasses}>
                           <FaIdCard className="text-lg min-w-[18px]" />

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import BackButton from "@/components/Shared/BackButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore as db } from '../../firebase';
@@ -86,16 +86,44 @@ const getAttendanceDocId = (dateStr: string, specialPeriodId?: string) => {
 const sanitizeDocId = (value: string) => String(value || '').replace(/[\/#?[\]]/g, '_');
 
 const ClubAttendancePage: React.FC = () => {
+  const [searchParams] = useSearchParams();
   const [myClubs, setMyClubs] = useState<Club[]>([]);
   const [selectedClub, setSelectedClub] = useState<Club | null>(null);
   const [specialPeriods, setSpecialPeriods] = useState<SpecialPeriod[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [attendance, setAttendance] = useState<Record<string, 'present' | 'absent' | 'late' | 'leave'>>({});
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState(() => {
+    const dateParam = searchParams.get('date');
+    if (dateParam) {
+      const parsed = new Date(dateParam);
+      if (Number.isFinite(parsed.getTime())) return parsed;
+    }
+    return new Date();
+  });
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [calendarEvents, setCalendarEvents] = useState<Record<string, CalendarEvent>>({});
+
+  useEffect(() => {
+    const dateParam = searchParams.get('date');
+    if (dateParam) {
+      const parsed = new Date(dateParam);
+      if (Number.isFinite(parsed.getTime())) {
+        setCurrentDate(parsed);
+      }
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    const clubIdParam = searchParams.get('clubId');
+    if (clubIdParam && myClubs.length > 0) {
+      const targetClub = myClubs.find(c => c.id === clubIdParam);
+      if (targetClub && (!selectedClub || selectedClub.id !== targetClub.id)) {
+        setSelectedClub(targetClub);
+      }
+    }
+  }, [myClubs, searchParams, selectedClub]);
 
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const schoolId = (currentUser as any)?.schoolId;

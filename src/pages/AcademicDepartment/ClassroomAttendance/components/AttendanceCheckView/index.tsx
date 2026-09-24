@@ -15,6 +15,7 @@ interface AttendanceCheckViewProps {
     isSaving?: boolean;
     studentsLoading: boolean;
     schoolId: string;
+    roomMap?: Record<string, string>;
     onBack: () => void;
     onEdit: () => void;
     onSave: () => void;
@@ -39,6 +40,7 @@ const AttendanceCheckView: React.FC<AttendanceCheckViewProps> = ({
     isSaving = false,
     studentsLoading,
     schoolId,
+    roomMap,
     onBack,
     onEdit,
     onSave,
@@ -53,6 +55,22 @@ const AttendanceCheckView: React.FC<AttendanceCheckViewProps> = ({
             ? selectedClass.periods.join(' - ') 
             : String(selectedClass.period);
     const timeLabel = selectedClass.startTime || selectedClass.endTime ? `${selectedClass.startTime || '-'}-${selectedClass.endTime || '-'}` : '-';
+
+    const displayRoom = React.useMemo(() => {
+        const raw = selectedClass.room;
+        if (!raw || raw === 'all') return '';
+        if (roomMap && roomMap[raw]) return roomMap[raw];
+        if (Array.isArray(selectedClass.roomIds) && selectedClass.roomIds.length > 0 && roomMap) {
+            const found = selectedClass.roomIds
+                .map(id => roomMap[id] || id)
+                .filter(v => v && v !== 'all' && !/^[A-Za-z0-9]{18,24}$/.test(v));
+            if (found.length > 0) return found.join(', ');
+        }
+        if (/^[A-Za-z0-9]{18,24}$/.test(raw)) {
+            return '';
+        }
+        return raw;
+    }, [selectedClass.room, selectedClass.roomIds, roomMap]);
 
     return (
         <div className={isPwaMode ? "space-y-3 overflow-x-hidden" : "space-y-6"}>
@@ -72,11 +90,11 @@ const AttendanceCheckView: React.FC<AttendanceCheckViewProps> = ({
                             <p className="text-[9px] text-gray-500 dark:text-gray-400 truncate flex items-center gap-1.5 mt-0.5">
                                 <Clock size={9} className="shrink-0" />
                                 <span>คาบ {displayPeriod} ({timeLabel})</span>
-                                {selectedClass.room && selectedClass.room !== 'all' && (
+                                {displayRoom && (
                                     <>
                                         <span className="text-gray-300 dark:text-gray-600">•</span>
                                         <MapPin size={9} className="shrink-0" />
-                                        <span className="truncate">{selectedClass.room}</span>
+                                        <span className="truncate">{displayRoom}</span>
                                     </>
                                 )}
                             </p>
@@ -114,9 +132,9 @@ const AttendanceCheckView: React.FC<AttendanceCheckViewProps> = ({
                                 <p className="inline-flex items-center gap-1 text-gray-500 dark:text-gray-400 font-bold whitespace-nowrap bg-gray-100 dark:bg-white/5 px-2 py-0.5 rounded-full text-[11px] sm:text-sm">
                                     <Clock size={14} /> คาบ {displayPeriod} ({timeLabel})
                                 </p>
-                                {selectedClass.room && selectedClass.room !== 'all' && (
+                                {displayRoom && (
                                     <p className="inline-flex items-center gap-1 text-gray-500 dark:text-gray-400 font-bold whitespace-nowrap bg-gray-100 dark:bg-white/5 px-2 py-0.5 rounded-full text-[11px] sm:text-sm">
-                                        <MapPin size={14} className="shrink-0" /> <span className="truncate">{selectedClass.room}</span>
+                                        <MapPin size={14} className="shrink-0" /> <span className="truncate">{displayRoom}</span>
                                     </p>
                                 )}
                                 {selectedClass.isSubstitute && (

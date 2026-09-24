@@ -111,6 +111,8 @@ const parseTimeParts = (time: string) => {
     };
 };
 
+const isFirebaseUid = (val?: string) => typeof val === 'string' && /^[A-Za-z0-9]{18,24}$/.test(val);
+
 const ClassroomAttendancePage: React.FC = () => {
     const isPwaMode = usePwaMode();
     const navigate = useNavigate();
@@ -174,17 +176,14 @@ const ClassroomAttendancePage: React.FC = () => {
     const roomMap = useMemo(() => {
         const map: Record<string, string> = {};
         physicalRooms.forEach(r => {
-            const name = r.name || r.roomName || r.id;
-            const code = r.roomCode || '';
-            
-            if (code && code.length >= 3) {
-                // Parse 3-digit code: [Building][Floor][Room]
-                const b = code.charAt(0);
-                const f = code.charAt(1);
-                const rNum = code.substring(2);
-                map[r.id] = `อาคาร ${b} ชั้น ${f} ห้อง ${rNum}`;
-            } else {
-                map[r.id] = name;
+            const name = String(r.roomName || r.name || '').trim();
+            const code = String(r.roomCode || r.code || '').trim();
+            const label = name && code && name !== code
+                ? `${name} (${code})`
+                : (name || (code ? `ห้อง ${code}` : ''));
+            if (label) {
+                map[r.id] = label;
+                if (code) map[code] = label;
             }
         });
         return map;
@@ -219,6 +218,58 @@ const ClassroomAttendancePage: React.FC = () => {
             }
         }
     }, [schedules, searchParams, selectedClass]);
+
+    // --- 0.2 Auto select class from 'courseId' / 'period' / 'groupNumber' query parameters ---
+    useEffect(() => {
+        const courseIdParam = searchParams.get('courseId');
+        const periodParam = searchParams.get('period');
+        const groupNumberParam = searchParams.get('groupNumber');
+
+        if ((courseIdParam || periodParam) && schedules.length > 0) {
+            const targetSchedule = schedules.find(s => {
+                const courseMatches = !courseIdParam || s.courseId === courseIdParam || s.subjectCode === courseIdParam;
+                const periodMatches = !periodParam || s.period === Number(periodParam) || (s.isDoublePeriod && s.periods?.includes(Number(periodParam)));
+                const groupMatches = !groupNumberParam || Number(s.groupNumber || 1) === Number(groupNumberParam);
+                return courseMatches && periodMatches && groupMatches;
+            }) || schedules.find(s => {
+                const courseMatches = !courseIdParam || s.courseId === courseIdParam || s.subjectCode === courseIdParam;
+                const periodMatches = !periodParam || s.period === Number(periodParam) || (s.isDoublePeriod && s.periods?.includes(Number(periodParam)));
+                return courseMatches && periodMatches;
+            }) || (courseIdParam ? schedules.find(s => s.courseId === courseIdParam || s.subjectCode === courseIdParam) : undefined);
+
+            if (targetSchedule && (!selectedClass || selectedClass.id !== targetSchedule.id)) {
+                setSelectedClass(targetSchedule);
+            }
+        }
+    }, [schedules, searchParams, selectedClass]);
+
+    // --- 0.3 Keep selectedClass room label in sync with resolved room names ---
+    // ต้อง idempotent: คำนวณ "ชื่อห้องเป้าหมาย" ทางเดียวแล้วเซ็ตเมื่อต่างจากค่าปัจจุบันเท่านั้น
+    // (เดิมแยกเป็นหลายสาขา if/else if ที่เซ็ตค่าสลับกันไปมา — เช่น ห้องจากตารางเป็น "105" แต่ roomMap["105"] เป็นป้ายยาว
+    // สาขาหนึ่งเปลี่ยนเป็นป้ายยาว อีกสาขาเปลี่ยนกลับเป็น "105" วนไม่รู้จบ ทำให้ selectedClass เปลี่ยนตลอด
+    // หน้ากระพริบและโหลดรายชื่อนักเรียนซ้ำจนกดใช้งานไม่ได้)
+    useEffect(() => {
+        if (!selectedClass) return;
+        const currentRoom = selectedClass.room || '';
+        const matchingSchedule = schedules.find(s => s.id === selectedClass.id) ||
+            schedules.find(s => s.courseId === selectedClass.courseId && s.period === selectedClass.period);
+
+        let targetRoom = currentRoom;
+        if (matchingSchedule?.room) {
+            targetRoom = matchingSchedule.room;
+        } else if (currentRoom && roomMap[currentRoom]) {
+            targetRoom = roomMap[currentRoom];
+        } else if (Array.isArray(selectedClass.roomIds) && selectedClass.roomIds.length > 0) {
+            const resolved = selectedClass.roomIds
+                .map(id => roomMap[id] || id)
+                .filter(name => name && name !== 'all' && !isFirebaseUid(name));
+            targetRoom = resolved.join(', ') || currentRoom;
+        }
+
+        if (targetRoom !== currentRoom) {
+            setSelectedClass(prev => prev ? { ...prev, room: targetRoom } : prev);
+        }
+    }, [schedules, roomMap, selectedClass]);
 
     // Find current teacher ID from Redux map
     const currentTeacher = useMemo(() => {
@@ -574,11 +625,26 @@ const ClassroomAttendancePage: React.FC = () => {
                 const schedulesRef = collection(db, 'school-settings', schoolId, 'schedules');
                 let q = query(schedulesRef);
                 if (academicYear) q = query(q, where("academicYear", "==", academicYear));
-                const [querySnapshot, coursesSnap, assignmentSnap] = await Promise.all([
+                const [querySnapshot, coursesSnap, assignmentSnap, roomsSnap] = await Promise.all([
                     getDocs(q),
                     getDocs(collection(db, 'school-settings', schoolId, 'courses')),
                     getDocs(collection(db, 'school-settings', schoolId, 'course_assignments')),
+                    getDocs(collection(db, 'school-settings', schoolId, 'physical-rooms')),
                 ]);
+
+                const liveRoomMap: Record<string, string> = {};
+                roomsSnap.forEach(roomDoc => {
+                    const r = { id: roomDoc.id, ...roomDoc.data() } as any;
+                    const name = String(r.roomName || r.name || '').trim();
+                    const code = String(r.roomCode || r.code || '').trim();
+                    const label = name && code && name !== code
+                        ? `${name} (${code})`
+                        : (name || (code ? `ห้อง ${code}` : ''));
+                    if (label) {
+                        liveRoomMap[roomDoc.id] = label;
+                        if (code) liveRoomMap[code] = label;
+                    }
+                });
 
                 const courseDataMap: Record<string, any> = {};
                 coursesSnap.forEach(courseDoc => {
@@ -664,7 +730,7 @@ const ClassroomAttendancePage: React.FC = () => {
                                     const classRoomSuffix = myAssignment?.room || groupNumber;
                                     const roomIds = normalizeRoomIds(myAssignment?.roomIds || course.room || course.roomIds || course.roomNumber || data.room || data.roomNumber);
                                     const displayRoom = roomIds.length > 0 && !roomIds.includes('all')
-                                        ? roomIds.map((id: string) => roomMap[id] || id).join(', ')
+                                        ? roomIds.map((id: string) => liveRoomMap[id] || roomMap[id] || (isFirebaseUid(id) ? '' : id)).filter(Boolean).join(', ')
                                         : String(groupNumber);
                                     const levelName = formatClassDisplay(courseClassId);
 
@@ -722,12 +788,12 @@ const ClassroomAttendancePage: React.FC = () => {
                         let subRoom = "";
 
                         if (typeof rawSubRoom === 'string' && rawSubRoom.trim()) {
-                            subRoom = rawSubRoom;
+                            subRoom = liveRoomMap[rawSubRoom] || roomMap[rawSubRoom] || (isFirebaseUid(rawSubRoom) ? '' : rawSubRoom);
                         } else if (Array.isArray(rawSubRoom)) {
                             const firstValid = rawSubRoom.find(r => r && String(r).toLowerCase() !== 'all');
-                            subRoom = firstValid ? (roomMap[String(firstValid)] || String(firstValid)) : "";
+                            subRoom = firstValid ? (liveRoomMap[String(firstValid)] || roomMap[String(firstValid)] || (isFirebaseUid(String(firstValid)) ? '' : String(firstValid))) : "";
                         } else if (rawSubRoom && String(rawSubRoom).toLowerCase() !== 'all') {
-                            subRoom = roomMap[String(rawSubRoom)] || String(rawSubRoom);
+                            subRoom = liveRoomMap[String(rawSubRoom)] || roomMap[String(rawSubRoom)] || (isFirebaseUid(String(rawSubRoom)) ? '' : String(rawSubRoom));
                         }
 
                         // Resolve groupNumber: use explicit value from Firestore only — never
@@ -873,7 +939,10 @@ const ClassroomAttendancePage: React.FC = () => {
         };
 
         fetchSchedule();
-    }, [currentDate, schoolId, currentTeacher, scheduleDayOverride, academicYear, semester, roomMap, teacherMap, teachingPeriodNumbers, periodInfoByNumber]);
+    // ห้ามใส่ roomMap ใน deps: effect นี้เคย setPhysicalRooms เอง → roomMap เปลี่ยน → effect รันซ้ำไม่รู้จบ
+    // (setLoading/setSchedules([]) วนทำให้หน้ากระพริบและกดเข้าห้องเรียนไม่ได้) ชื่อห้องใช้ liveRoomMap ที่อ่านสดในรอบนี้
+    // และ effect 0.3 จะซิงก์ชื่อห้องของ selectedClass ให้เองเมื่อ roomMap โหลดเสร็จ
+    }, [currentDate, schoolId, currentTeacher, scheduleDayOverride, academicYear, semester, teacherMap, teachingPeriodNumbers, periodInfoByNumber]);
 
     const isCurrentPeriod = (start: string, end: string) => {
         const now = new Date();
@@ -1291,7 +1360,8 @@ const ClassroomAttendancePage: React.FC = () => {
         };
 
         if (selectedClass) fetchStudents();
-    }, [selectedClass, schoolId, currentDate, academicYear, semester]);
+    // ใช้ selectedClass?.id แทนทั้งออบเจ็กต์: การแก้ป้ายชื่อห้อง (effect 0.3) สร้างออบเจ็กต์ใหม่แต่ไม่ควรสั่งโหลดรายชื่อ/สถานะเช็คชื่อซ้ำ
+    }, [selectedClass?.id, schoolId, currentDate, academicYear, semester]);
 
     // --- ปิดระบบ Auto-Refresh เมื่อสลับแท็บตามที่ผู้ใช้แจ้ง (ลดภาระการโหลดซ้ำ) ---
     /*
@@ -1708,6 +1778,7 @@ const ClassroomAttendancePage: React.FC = () => {
                                 inactiveCourseIds={inactiveCourseIds}
                                 isCurrentPeriod={isCurrentPeriod}
                                 currentDate={currentDate}
+                                roomMap={roomMap}
                             />
                         </div>
                     ) : (
@@ -1721,6 +1792,7 @@ const ClassroomAttendancePage: React.FC = () => {
                             isSaving={isSaving}
                             studentsLoading={studentsLoading}
                             schoolId={schoolId}
+                            roomMap={roomMap}
                             onBack={() => {
                                 setSelectedClass(null);
                                 sessionStorage.removeItem('attendance_selected_class');

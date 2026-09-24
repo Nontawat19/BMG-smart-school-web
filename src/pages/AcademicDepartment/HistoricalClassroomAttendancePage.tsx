@@ -490,7 +490,17 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
     const [selectedClass, setSelectedClass] = useState<string>('');
     const [selectedRoomNumber, setSelectedRoomNumber] = useState<string>('');
     const [selectedCourse, setSelectedCourse] = useState<string>('');
-    const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
+    const [selectedMonth, setSelectedMonth] = useState<number>(() => {
+        const urlMonth = new URLSearchParams(window.location.search).get('month');
+        if (urlMonth !== null && !isNaN(Number(urlMonth))) {
+            return Number(urlMonth);
+        }
+        return new Date().getMonth();
+    });
+
+    const lastFetchKeyRef = useRef<string>('');
+    const rawAttendanceDocsRef = useRef<any[]>([]);
+    const isFetchingRef = useRef<boolean>(false);
 
     // Effect to handle initial parameters from URL
     useEffect(() => {
@@ -499,12 +509,16 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
         const classParam = searchParams.get('classId');
         const roomParam = searchParams.get('roomNumber') || searchParams.get('room');
         const courseParam = searchParams.get('courseId');
+        const monthParam = searchParams.get('month');
 
         if (yearParam) setAcademicYear(yearParam);
         if (semesterParam) setSemester(semesterParam);
         if (classParam) setSelectedClass(classParam);
         if (roomParam) setSelectedRoomNumber(roomParam);
         if (courseParam) setSelectedCourse(courseParam);
+        if (monthParam !== null && !isNaN(Number(monthParam))) {
+            setSelectedMonth(Number(monthParam));
+        }
     }, [searchParams]);
 
     const [courses, setCourses] = useState<Course[]>([]);
@@ -835,7 +849,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
         if (urlCourse) {
             // Keep the exact courseId so duplicate courses/sections with the same code don't clash
-            const found = courses.find(c => c.id === urlCourse);
+            const found = courses.find(c => c.id === urlCourse || c.code === urlCourse);
             setSelectedCourse(found?.id || urlCourse);
         }
     }, [searchParams, courses]);
@@ -926,7 +940,9 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 const targetCode = (cObj?.code || selectedCourse || "").replace(/\s/g, '').toLowerCase();
 
                 const schedulesRef = collection(db, 'school-settings', schoolId, 'schedules');
-                const q = query(schedulesRef);
+                const scheduleConstraints = [];
+                if (academicYear) scheduleConstraints.push(where('academicYear', '==', String(academicYear)));
+                const q = query(schedulesRef, ...scheduleConstraints);
                 const snap = await getDocs(q);
 
                 const scheduleMap: Record<string, number[]> = {
@@ -1303,10 +1319,12 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
     // Fetch Data
     const handleFetchData = React.useCallback(async () => {
-        if (!schoolId || !selectedClass || !selectedCourse || !academicYear || !semester) {
+        if (!schoolId || !selectedClass || !selectedCourse || !academicYear || !semester || courses.length === 0) {
             return;
         }
 
+        if (isFetchingRef.current) return;
+        isFetchingRef.current = true;
         setLoading(true);
         setIsModified(false);
 
@@ -1319,7 +1337,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             setDates(generatedDates);
             setDateMetadata(metadata);
 
-            // 2. Fetch Students using robust logic from ClassroomAttendancePage
+            // 2. Resolve course codes
             const courseObj = courses.find(c => c.id === selectedCourse || c.code === selectedCourse);
             const subjectCode = courseObj?.code || selectedCourse;
             const targetCodes = new Set<string>();
@@ -1333,270 +1351,219 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 targetCodes.add(courseObj.code.replace(/\s/g, ''));
             }
             const finalSubjectCodes = Array.from(targetCodes).filter(Boolean) as string[];
-            // Class identifiers for lookup
             const currentClassKey = Object.keys(CLASSES).find(key => CLASSES[key] === selectedClass) || selectedClass;
             const currentClassTitle = (CLASSES[selectedClass] || selectedClass);
             const currentClassVariants = getClassVariants(selectedClass);
-
-            console.log("[HistoricalAttendance] Fetching codes:", finalSubjectCodes, "Class:", currentClassKey, "Room:", selectedRoomNumber);
-
-            let studentList: Student[] = [];
-            let missingRoomList: Student[] = [];
-
-            // Attempt to fetch from Enrollments first
             const courseId = courseObj?.id || selectedCourse;
-            
-            // 1. Primary Query: Try fetching by courseId (most accurate for CourseEnrollmentPage)
-            let enrollConstraints = [
-                where('courseId', '==', courseId),
-                where('academicYear', '==', academicYear),
-                ...(isPrimaryAnnualMode ? [] : [where('semester', '==', semester)])
-            ];
-            
-            let enrollQ = query(collection(db, 'school-settings', schoolId, 'enrollments'), ...enrollConstraints);
-            let enrollSnap = await getDocs(enrollQ);
 
-            // Annual/legacy enrollment records may not store semester, or may store "annual"/"1-2".
-            if (enrollSnap.empty) {
-                enrollQ = query(
-                    collection(db, 'school-settings', schoolId, 'enrollments'),
-                    where('courseId', '==', courseId),
-                    where('academicYear', '==', academicYear)
-                );
-                enrollSnap = await getDocs(enrollQ);
-            }
+            console.log("[HistoricalAttendance] Fast parallel fetch for codes:", finalSubjectCodes, "Class:", currentClassKey, "Room:", selectedRoomNumber);
 
-            // 2. Fallback Query: Try fetching by courseCode if ID search yielded nothing
-            if (enrollSnap.empty && subjectCode) {
-                const codeConstraints = [
-                    where('courseCode', '==', subjectCode),
-                    where('academicYear', '==', academicYear),
-                    ...(isPrimaryAnnualMode ? [] : [where('semester', '==', semester)])
-                ];
-                enrollQ = query(collection(db, 'school-settings', schoolId, 'enrollments'), ...codeConstraints);
-                enrollSnap = await getDocs(enrollQ);
-            }
+            // 3. RUN STUDENTS & ATTENDANCE CONCURRENTLY IN PARALLEL!
+            const [studentsResult, attSnap] = await Promise.all([
+                // Fetch Students & Enrollments
+                (async () => {
+                    let enrollConstraints = [
+                        where('courseId', '==', courseId),
+                        where('academicYear', '==', academicYear),
+                        ...(isPrimaryAnnualMode ? [] : [where('semester', '==', semester)])
+                    ];
+                    
+                    let enrollQ = query(collection(db, 'school-settings', schoolId, 'enrollments'), ...enrollConstraints);
+                    let enrollSnap = await getDocs(enrollQ);
 
-            if (enrollSnap.empty && subjectCode) {
-                enrollQ = query(
-                    collection(db, 'school-settings', schoolId, 'enrollments'),
-                    where('courseCode', '==', subjectCode),
-                    where('academicYear', '==', academicYear)
-                );
-                enrollSnap = await getDocs(enrollQ);
-            }
-
-            let filteredEnrollDocs = enrollSnap.docs;
-            
-            // In-memory filter for room/group and class on enrollment docs
-            if (selectedRoomNumber && selectedRoomNumber !== 'all') {
-                filteredEnrollDocs = filteredEnrollDocs.filter((d: any) => {
-                    const data = d.data();
-                    const eRoom = normalizeRoom(data.room || data.roomNumber);
-                    if (eRoom) {
-                        return eRoom === 'all' || eRoom === normalizeRoom(selectedRoomNumber);
+                    if (enrollSnap.empty) {
+                        enrollQ = query(
+                            collection(db, 'school-settings', schoolId, 'enrollments'),
+                            where('courseId', '==', courseId),
+                            where('academicYear', '==', academicYear)
+                        );
+                        enrollSnap = await getDocs(enrollQ);
                     }
-                    const parsed = parseClassRoom(data.classLevel || data.className);
-                    if (parsed.room) {
-                        return normalizeRoom(parsed.room) === normalizeRoom(selectedRoomNumber);
-                    }
-                    if (data.groupName || data.groupNumber || data.group) {
-                        return matchesRoomGroup(data, selectedRoomNumber);
-                    }
-                    return true;
-                });
-            }
-            if (selectedClass) {
-                filteredEnrollDocs = filteredEnrollDocs.filter(doc => {
-                    const data = doc.data();
-                    if (!data.classLevel) return true; 
-                    return matchesClassValue(data.classLevel, selectedClass) || classMatchesSelection(data.classLevel, selectedClass);
-                });
-            }
 
-            if (filteredEnrollDocs.length > 0) {
-                const enrolledStudentIds = Array.from(new Set(filteredEnrollDocs.map(d => d.data().studentId).filter(Boolean)));
-                
-                const studentsRef = collection(db, 'school-settings', schoolId, 'students');
-                const batchSize = 30;
-                const studentDetails: Student[] = [];
+                    if (enrollSnap.empty && subjectCode) {
+                        const codeConstraints = [
+                            where('courseCode', '==', subjectCode),
+                            where('academicYear', '==', academicYear),
+                            ...(isPrimaryAnnualMode ? [] : [where('semester', '==', semester)])
+                        ];
+                        enrollQ = query(collection(db, 'school-settings', schoolId, 'enrollments'), ...codeConstraints);
+                        enrollSnap = await getDocs(enrollQ);
+                    }
 
-                for (let i = 0; i < enrolledStudentIds.length; i += batchSize) {
-                    const batchIds = enrolledStudentIds.slice(i, i + batchSize);
-                    const qBatch = query(studentsRef, where('__name__', 'in', batchIds));
-                    const batchSnap = await getDocs(qBatch);
-                    batchSnap.forEach(snap => {
-                        const data = snap.data();
-                        studentDetails.push({
-                            id: snap.id,
-                            firstName: data.firstName || '',
-                            lastName: data.lastName || '',
-                            number: data.studentNumber || data.number || '',
-                            studentNumber: data.studentId || '',
-                            gender: data.gender || '',
-                            prefix: data.title || data.prefix || '',
-                            profileImageUrl: data.profileImageUrl || '',
-                            room: data.room || data.roomNumber || '',
-                            roomNumber: data.room || data.roomNumber || '',
-                            groupName: data.groupName || '',
-                            classLevel: data.classLevel || '',
-                            status: data.status,
-                            studentStatus: data.studentStatus,
-                        } as Student);
+                    if (enrollSnap.empty && subjectCode) {
+                        enrollQ = query(
+                            collection(db, 'school-settings', schoolId, 'enrollments'),
+                            where('courseCode', '==', subjectCode),
+                            where('academicYear', '==', academicYear)
+                        );
+                        enrollSnap = await getDocs(enrollQ);
+                    }
+
+                    let filteredEnrollDocs = enrollSnap.docs;
+                    if (selectedRoomNumber && selectedRoomNumber !== 'all') {
+                        filteredEnrollDocs = filteredEnrollDocs.filter((d: any) => {
+                            const data = d.data();
+                            const eRoom = normalizeRoom(data.room || data.roomNumber);
+                            if (eRoom) {
+                                return eRoom === 'all' || eRoom === normalizeRoom(selectedRoomNumber);
+                            }
+                            const parsed = parseClassRoom(data.classLevel || data.className);
+                            if (parsed.room) {
+                                return normalizeRoom(parsed.room) === normalizeRoom(selectedRoomNumber);
+                            }
+                            if (data.groupName || data.groupNumber || data.group) {
+                                return matchesRoomGroup(data, selectedRoomNumber);
+                            }
+                            return true;
+                        });
+                    }
+                    if (selectedClass) {
+                        filteredEnrollDocs = filteredEnrollDocs.filter(doc => {
+                            const data = doc.data();
+                            if (!data.classLevel) return true; 
+                            return matchesClassValue(data.classLevel, selectedClass) || classMatchesSelection(data.classLevel, selectedClass);
+                        });
+                    }
+
+                    let localStudentList: Student[] = [];
+                    let localMissingRoomList: Student[] = [];
+
+                    if (filteredEnrollDocs.length > 0) {
+                        const enrolledStudentIds = Array.from(new Set(filteredEnrollDocs.map(d => d.data().studentId).filter(Boolean)));
+                        const studentsRef = collection(db, 'school-settings', schoolId, 'students');
+                        const batchSize = 30;
+                        const batchPromises = [];
+
+                        for (let i = 0; i < enrolledStudentIds.length; i += batchSize) {
+                            const batchIds = enrolledStudentIds.slice(i, i + batchSize);
+                            batchPromises.push(getDocs(query(studentsRef, where('__name__', 'in', batchIds))));
+                        }
+                        const batchSnaps = await Promise.all(batchPromises);
+                        const studentDetails: Student[] = [];
+                        batchSnaps.forEach(batchSnap => {
+                            batchSnap.forEach(snap => {
+                                const data = snap.data();
+                                studentDetails.push({
+                                    id: snap.id,
+                                    firstName: data.firstName || '',
+                                    lastName: data.lastName || '',
+                                    number: data.studentNumber || data.number || '',
+                                    studentNumber: data.studentId || '',
+                                    gender: data.gender || '',
+                                    prefix: data.title || data.prefix || '',
+                                    profileImageUrl: data.profileImageUrl || '',
+                                    room: data.room || data.roomNumber || '',
+                                    roomNumber: data.room || data.roomNumber || '',
+                                    groupName: data.groupName || '',
+                                    classLevel: data.classLevel || '',
+                                    status: data.status,
+                                    studentStatus: data.studentStatus,
+                                } as Student);
+                            });
+                        });
+                        localStudentList = studentDetails.filter(s => studentMatchesClassAndRoom(s, selectedClass, selectedRoomNumber));
+                        localMissingRoomList = studentDetails.filter(s => isMissingRoomForSelection(s, selectedClass, selectedRoomNumber));
+                    }
+
+                    if (localStudentList.length === 0) {
+                        // Fallback to Class Level
+                        const classLevelValues = currentClassVariants.length > 0 ? currentClassVariants : [currentClassKey, currentClassTitle].filter(Boolean);
+                        const studentConstraints = [
+                            where('classLevel', 'in', classLevelValues.slice(0, 30))
+                        ];
+
+                        const studentQ = query(
+                            collection(db, 'school-settings', schoolId, 'students'),
+                            ...studentConstraints
+                        );
+                        const sSnap = await getDocs(studentQ);
+
+                        const fallbackStudents = sSnap.docs
+                            .map(d => {
+                                const data = d.data();
+                                return {
+                                    id: d.id,
+                                    firstName: data.firstName || '',
+                                    lastName: data.lastName || '',
+                                    number: data.studentNumber || data.number || '',
+                                    studentNumber: data.studentId || '',
+                                    gender: data.gender || '',
+                                    prefix: data.title || data.prefix || '',
+                                    profileImageUrl: data.profileImageUrl || '',
+                                    roomNumber: data.room || data.roomNumber || '',
+                                    room: data.room || data.roomNumber || '',
+                                    groupName: data.groupName || '',
+                                    classLevel: data.classLevel || '',
+                                    status: data.status,
+                                    studentStatus: data.studentStatus,
+                                } as Student & { roomNumber: string };
+                            });
+                        localStudentList = fallbackStudents.filter(s => studentMatchesClassAndRoom(s, selectedClass, selectedRoomNumber));
+                        localMissingRoomList = fallbackStudents.filter(s => isMissingRoomForSelection(s, selectedClass, selectedRoomNumber));
+                    }
+
+                    localStudentList.sort((a, b) => {
+                        const roomA = parseInt(a.room || "0", 10) || 0;
+                        const roomB = parseInt(b.room || "0", 10) || 0;
+                        if (roomA !== roomB) return roomA - roomB;
+
+                        const numA = a.number ? parseInt(a.number, 10) : 9999;
+                        const numB = b.number ? parseInt(b.number, 10) : 9999;
+                        if (numA !== numB) return numA - numB;
+
+                        return (a.firstName || "").localeCompare(b.firstName || "", 'th');
                     });
-                }
-                studentList = studentDetails.filter(s => studentMatchesClassAndRoom(s, selectedClass, selectedRoomNumber));
-                missingRoomList = studentDetails.filter(s => isMissingRoomForSelection(s, selectedClass, selectedRoomNumber));
-            }
 
-            if (studentList.length === 0) {
-                // Fallback to Class Level
-                const classLevelValues = currentClassVariants.length > 0 ? currentClassVariants : [currentClassKey, currentClassTitle].filter(Boolean);
-                const studentConstraints = [
-                    where('classLevel', 'in', classLevelValues.slice(0, 30))
-                ];
+                    return { studentList: localStudentList, missingRoomList: localMissingRoomList };
+                })(),
 
-                const studentQ = query(
-                    collection(db, 'school-settings', schoolId, 'students'),
-                    ...studentConstraints
-                );
-                const sSnap = await getDocs(studentQ);
+                // Fetch Attendance Docs
+                (async () => {
+                    const attRef = collectionGroup(db, 'ClassroomAttendance');
+                    const attendanceConstraints = [
+                        where('schoolId', '==', schoolId),
+                        where('subjectCode', 'in', finalSubjectCodes),
+                        where('academicYear', '==', academicYear),
+                        ...(isPrimaryAnnualMode ? [] : [where('semester', '==', semester)])
+                    ];
+                    let snap = await getDocs(query(attRef, ...attendanceConstraints));
+                    if (snap.empty) {
+                        snap = await getDocs(query(
+                            attRef,
+                            where('schoolId', '==', schoolId),
+                            where('subjectCode', 'in', finalSubjectCodes)
+                        ));
+                    }
+                    return snap;
+                })()
+            ]);
 
-                const fallbackStudents = sSnap.docs
-                    .map(d => {
-                        const data = d.data();
-                        return {
-                            id: d.id,
-                            firstName: data.firstName || '',
-                            lastName: data.lastName || '',
-                            number: data.studentNumber || data.number || '', // DB studentNumber is Class No
-                            studentNumber: data.studentId || '', // DB studentId is Student ID
-                            gender: data.gender || '',
-                            prefix: data.title || data.prefix || '',
-                            profileImageUrl: data.profileImageUrl || '',
-                            roomNumber: data.room || data.roomNumber || '',
-                            room: data.room || data.roomNumber || '',
-                            groupName: data.groupName || '',
-                            classLevel: data.classLevel || '',
-                            status: data.status,
-                            studentStatus: data.studentStatus,
-                        } as Student & { roomNumber: string };
-                    })
-                    ;
-                studentList = fallbackStudents.filter(s => studentMatchesClassAndRoom(s, selectedClass, selectedRoomNumber));
-                missingRoomList = fallbackStudents.filter(s => isMissingRoomForSelection(s, selectedClass, selectedRoomNumber));
-            }
+            const { studentList, missingRoomList } = studentsResult;
 
-            // ไม่ได้เลือกห้อง แต่ระดับชั้นนี้มีหลายห้อง → ไม่ผสมรายชื่อหลายห้องในตารางเดียว (แต่ละห้องเช็คคนละวัน
-            // คนละคาบ ทำให้ครูสับสน/คลิกผิดห้อง) ให้เลือกห้องจากดร็อปดาวน์ก่อน
             if (!selectedRoomNumber) {
                 const distinctRooms = new Set(studentList.map(getStudentRecordRoom).filter(Boolean));
                 if (distinctRooms.size > 1) {
                     setRoomSelectionRequired(true);
                     setStudents([]);
                     setStudentsMissingRoom([]);
+                    setLoading(false);
                     return;
                 }
             }
             setRoomSelectionRequired(false);
-
-            studentList.sort((a, b) => {
-                const roomA = parseInt(a.room || "0", 10) || 0;
-                const roomB = parseInt(b.room || "0", 10) || 0;
-                if (roomA !== roomB) return roomA - roomB;
-
-                const numA = a.number ? parseInt(a.number, 10) : 9999;
-                const numB = b.number ? parseInt(b.number, 10) : 9999;
-                if (numA !== numB) return numA - numB;
-
-                return (a.firstName || "").localeCompare(b.firstName || "", 'th');
-            });
             setStudents(studentList);
             setStudentsMissingRoom(missingRoomList);
 
-            // 3. Fetch Leaves (Activity/Sick/etc.)
-            // We need to check if any student has approved leave on generatedDates
-            const leavesMap: Record<string, Record<string, LeaveRecord>> = {}; // studentId -> dateStr -> info
-
-            // Optimization: Fetch leaves for all students in parallel or batch if possible
-            // Since Firestore doesn't support "OR" across many students well, we fetch per student
-            // but we can limit to approved status.
-            await Promise.all(studentList.map(async (st) => {
-                const leaveRef = collection(db, 'school-settings', schoolId, 'students', st.id, 'leave_summary');
-                const leaveQ = query(leaveRef, where('status', '==', 'approved'));
-                const leaveSnap = await getDocs(leaveQ);
-
-                leaveSnap.forEach(lDoc => {
-                    const lData = lDoc.data();
-                    const startDate = lData.startDate?.toDate ? lData.startDate.toDate() : new Date(lData.startDate);
-                    const endDate = lData.endDate?.toDate ? lData.endDate.toDate() : new Date(lData.endDate);
-
-                    // Normalize to YYYY-MM-DD
-                    // ใช้วันที่ตามเวลาท้องถิ่น — toISOString() เป็น UTC ทำให้วันที่เลื่อนถอยหลัง 1 วันในไทย (UTC+7)
-                    const toLocalISODate = (dt: Date) =>
-                        `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
-                    const startStr = toLocalISODate(startDate);
-                    const endStr = toLocalISODate(endDate);
-
-                    // Check intersection with generatedDates (which are DD-MM-YYYY)
-                    // We need to convert generatedDates to YYYY-MM-DD for comparison
-                    generatedDates.forEach(slotKey => {
-                        const datePart = getDateDisplayPart(slotKey);
-                        const dISO = displayDateToISO(datePart);
-
-                        if (dISO >= startStr && dISO <= endStr) {
-                            if (!leavesMap[st.id]) leavesMap[st.id] = {};
-                            leavesMap[st.id][datePart] = {
-                                type: lData.leaveType,
-                                description: lData.reason || lData.leaveType
-                            };
-                        }
-                    });
-                });
-            }));
-            setStudentLeaves(leavesMap);
-
-            // 4. Fetch Attendance using robust matching (consistent with fetchAnnualAttendanceCount)
-            const attRef = collectionGroup(db, 'ClassroomAttendance');
-            const attendanceConstraints = [
-                where('schoolId', '==', schoolId),
-                where('subjectCode', 'in', finalSubjectCodes),
-                where('academicYear', '==', academicYear),
-                ...(isPrimaryAnnualMode ? [] : [where('semester', '==', semester)])
-            ];
-            const q = query(
-                attRef,
-                ...attendanceConstraints
-            );
-
-            let attSnap = await getDocs(q);
-            if (attSnap.empty) {
-                const fallbackQ = query(
-                    attRef,
-                    where('schoolId', '==', schoolId),
-                    where('subjectCode', 'in', finalSubjectCodes)
-                );
-                attSnap = await getDocs(fallbackQ);
-            }
+            // Parse Attendance Docs
             const rawAttendanceDocs: any[] = [];
             const foundDataSlots = new Set<string>();
-
-            console.log(`[HistoricalAttendance] Querying ${finalSubjectCodes.length} codes for Year: ${academicYear}, Sem: ${semester}. Found ${attSnap.size} total docs.`);
 
             attSnap.docs.forEach(doc => {
                 const d = doc.data();
                 const docDate = d.date?.toDate ? d.date.toDate() : null;
-                
-                // Robust class matching (expanded)
-                const matchesClass = matchesClassValue(d.classId, selectedClass) ||
-                    matchesClassValue(d.className, selectedClass);
-
+                const matchesClass = matchesClassValue(d.classId, selectedClass) || matchesClassValue(d.className, selectedClass);
                 const matchesRoom = matchesRoomGroup(d, selectedRoomNumber);
-
-                if (!matchesClass || !matchesRoom) {
-                    // console.log("[HistoricalAttendance] Skip doc due to mismatch:", d.studentId, d.classId, d.className, "Room:", d.room);
-                    return;
-                }
+                if (!matchesClass || !matchesRoom) return;
 
                 let dateStrDisplay = '';
                 if (docDate) {
@@ -1605,7 +1572,6 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                         const month = String(docDate.getMonth() + 1).padStart(2, '0');
                         const year = docDate.getFullYear();
                         dateStrDisplay = `${day}-${month}-${year}`;
-                        console.log("[HistoricalAttendance] Match found:", d.studentId, dateStrDisplay, "P" + (d.period || 0));
                     }
                 }
 
@@ -1622,12 +1588,14 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 }
             });
 
-            // 5. Generate dates based on Schedule + Found Data Slots
+            rawAttendanceDocsRef.current = rawAttendanceDocs;
+
+            // Generate dates based on Schedule + Found Data Slots
             const { dates: finalDates, metadata: finalMetadata } = generateDates(academicYear, selectedMonth, foundDataSlots);
             setDates(finalDates);
             setDateMetadata(finalMetadata);
 
-            // 6. Map Attendance Data to Day Columns
+            // Map Attendance Data to Day Columns
             const dataMap: Record<string, Record<string, string>> = {};
             const mappedRecordPreference: Record<string, boolean> = {};
             rawAttendanceDocs.forEach(d => {
@@ -1640,60 +1608,154 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 if (finalDates.includes(dayKey)) {
                     if (!dataMap[d.studentId]) dataMap[d.studentId] = {};
                     const currentStatus = dataMap[d.studentId][dayKey];
-                    // If any period in the day was late/absent/leave, reflect that status; otherwise present
                     if (!currentStatus || (currentStatus === 'present' && d.status !== 'present')) {
                         dataMap[d.studentId][dayKey] = d.status;
                     }
                     mappedRecordPreference[mapKey] = d.isLegacyRoomRecord;
                 }
             });
-            setDates(finalDates);
-            setDateMetadata(finalMetadata);
 
-            // 6. Merge Leaves into Attendance Data (if no existing attendance)
-            // If there is a leave record, and NO attendance record, set it.
-            // If there IS attendance record, we keep it (user manual override).
-            // BUT, for the UI, we might want to show the 'default' as leave if undefined.
-
-            // Set initial data to raw DB state so changes (virtual leaves) are detected
+            // Set initial data and display to user IMMEDIATELY!
             setInitialAttendanceData(JSON.parse(JSON.stringify(dataMap)));
+            setAttendanceData(JSON.parse(JSON.stringify(dataMap)));
+            setLoading(false); // <--- UNBLOCK UI IMMEDIATELY!
 
-            const mergedData = JSON.parse(JSON.stringify(dataMap));
+            // Fetch Leaves in background (non-blocking)
+            (async () => {
+                try {
+                    const leavesMap: Record<string, Record<string, LeaveRecord>> = {};
+                    if (studentList.length === 0) return;
 
-            studentList.forEach(st => {
-                finalDates.forEach(date => {
-                    const leaveRec = leavesMap[st.id]?.[date] || leavesMap[st.id]?.[getDateDisplayPart(date)];
-                    if (leaveRec) {
-                        if (!mergedData[st.id]) mergedData[st.id] = {};
+                    // 1. Try global leave_summary first (FAST 1 query)
+                    const globalLeaveRef = collection(db, 'school-settings', schoolId, 'leave_summary');
+                    const globalLeaveQ = query(globalLeaveRef, where('status', '==', 'approved'));
+                    const globalSnap = await getDocs(globalLeaveQ);
 
-                        // If data exists, keep it. If not, inject leave status.
-                        if (!mergedData[st.id][date]) {
-                            if (leaveRec.type === 'ไปราชการ/กิจกรรม') {
-                                mergedData[st.id][date] = 'present';
-                            } else {
-                                mergedData[st.id][date] = 'leave';
-                            }
+                    const studentIdSet = new Set(studentList.map(s => s.id));
+                    const studentCodeSet = new Set(studentList.map(s => s.studentNumber).filter(Boolean));
+
+                    if (!globalSnap.empty) {
+                        globalSnap.forEach(lDoc => {
+                            const lData = lDoc.data();
+                            const stId = (lData.studentDocId && studentIdSet.has(lData.studentDocId)) ? lData.studentDocId :
+                                (lData.studentId && studentIdSet.has(lData.studentId)) ? lData.studentId :
+                                studentList.find(s => s.studentNumber === lData.studentId)?.id;
+                            if (!stId) return;
+
+                            const startDate = lData.startDate?.toDate ? lData.startDate.toDate() : new Date(lData.startDate);
+                            const endDate = lData.endDate?.toDate ? lData.endDate.toDate() : new Date(lData.endDate);
+                            const toLocalISODate = (dt: Date) =>
+                                `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+                            const startStr = toLocalISODate(startDate);
+                            const endStr = toLocalISODate(endDate);
+
+                            finalDates.forEach(slotKey => {
+                                const datePart = getDateDisplayPart(slotKey);
+                                const dISO = displayDateToISO(datePart);
+                                if (dISO >= startStr && dISO <= endStr) {
+                                    if (!leavesMap[stId]) leavesMap[stId] = {};
+                                    leavesMap[stId][datePart] = {
+                                        type: lData.leaveType,
+                                        description: lData.reason || lData.leaveType
+                                    };
+                                }
+                            });
+                        });
+                    }
+
+                    // Fallback chunked query for student subcollections if needed
+                    if (Object.keys(leavesMap).length === 0) {
+                        const chunkSize = 15;
+                        for (let i = 0; i < studentList.length; i += chunkSize) {
+                            const chunk = studentList.slice(i, i + chunkSize);
+                            await Promise.all(chunk.map(async (st) => {
+                                try {
+                                    const leaveRef = collection(db, 'school-settings', schoolId, 'students', st.id, 'leave_summary');
+                                    const leaveQ = query(leaveRef, where('status', '==', 'approved'));
+                                    const leaveSnap = await getDocs(leaveQ);
+                                    leaveSnap.forEach(lDoc => {
+                                        const lData = lDoc.data();
+                                        const startDate = lData.startDate?.toDate ? lData.startDate.toDate() : new Date(lData.startDate);
+                                        const endDate = lData.endDate?.toDate ? lData.endDate.toDate() : new Date(lData.endDate);
+                                        const toLocalISODate = (dt: Date) =>
+                                            `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+                                        const startStr = toLocalISODate(startDate);
+                                        const endStr = toLocalISODate(endDate);
+
+                                        finalDates.forEach(slotKey => {
+                                            const datePart = getDateDisplayPart(slotKey);
+                                            const dISO = displayDateToISO(datePart);
+                                            if (dISO >= startStr && dISO <= endStr) {
+                                                if (!leavesMap[st.id]) leavesMap[st.id] = {};
+                                                leavesMap[st.id][datePart] = {
+                                                    type: lData.leaveType,
+                                                    description: lData.reason || lData.leaveType
+                                                };
+                                            }
+                                        });
+                                    });
+                                } catch (_) {}
+                            }));
                         }
                     }
-                });
-            });
 
-            setAttendanceData(mergedData);
+                    setStudentLeaves(leavesMap);
+
+                    // Seamlessly inject leaves if any date had no attendance
+                    if (Object.keys(leavesMap).length > 0) {
+                        setAttendanceData(prev => {
+                            const merged = JSON.parse(JSON.stringify(prev));
+                            let changed = false;
+                            studentList.forEach(st => {
+                                finalDates.forEach(date => {
+                                    const leaveRec = leavesMap[st.id]?.[date] || leavesMap[st.id]?.[getDateDisplayPart(date)];
+                                    if (leaveRec && !merged[st.id]?.[date]) {
+                                        if (!merged[st.id]) merged[st.id] = {};
+                                        merged[st.id][date] = leaveRec.type === 'ไปราชการ/กิจกรรม' ? 'present' : 'leave';
+                                        changed = true;
+                                    }
+                                });
+                            });
+                            return changed ? merged : prev;
+                        });
+                    }
+                } catch (leaveErr) {
+                    console.warn('[HistoricalAttendance] Background leaves fetch warning:', leaveErr);
+                }
+            })();
 
         } catch (error) {
             console.error("Error fetching historical data:", error);
             Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถดึงข้อมูลประวัติการเช็คชื่อได้', 'error');
         } finally {
+            isFetchingRef.current = false;
             setLoading(false);
         }
     }, [schoolId, selectedClass, selectedRoomNumber, selectedCourse, academicYear, semester, selectedMonth, courses, generateDates, isPrimaryAnnualMode]);
 
-    // Auto-Fetch Effect
+    // In-memory update when course schedule loads without re-querying Firestore!
     useEffect(() => {
-        if (schoolId && selectedClass && selectedCourse && academicYear && semester) {
-            handleFetchData();
+        if (rawAttendanceDocsRef.current.length === 0 && students.length === 0) return;
+        const foundDataSlots = new Set<string>(rawAttendanceDocsRef.current.map(d => d.slotKey));
+        const { dates: finalDates, metadata: finalMetadata } = generateDates(academicYear, selectedMonth, foundDataSlots);
+        setDates(finalDates);
+        setDateMetadata(finalMetadata);
+    }, [courseSchedule, generateDates, academicYear, selectedMonth, students.length]);
+
+    // Auto-Fetch Effect: triggers ONLY when core user selection parameters change and courses are loaded
+    useEffect(() => {
+        if (!schoolId || !selectedClass || !selectedCourse || !academicYear || !semester || courses.length === 0) {
+            return;
         }
-    }, [schoolId, selectedClass, selectedRoomNumber, selectedCourse, academicYear, semester, selectedMonth, handleFetchData]);
+
+        const fetchKey = `${schoolId}_${selectedClass}_${selectedRoomNumber}_${selectedCourse}_${academicYear}_${semester}_${selectedMonth}`;
+        if (lastFetchKeyRef.current === fetchKey && !isModified) {
+            return;
+        }
+        lastFetchKeyRef.current = fetchKey;
+
+        handleFetchData();
+    }, [schoolId, selectedClass, selectedRoomNumber, selectedCourse, academicYear, semester, selectedMonth, courses.length, handleFetchData, isModified]);
 
     const getReasonText = (reason?: string) => {
         switch (reason) {

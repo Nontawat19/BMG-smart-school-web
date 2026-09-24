@@ -27,6 +27,8 @@ import Swal from "sweetalert2";
 import { Bell, Check, ExternalLink, Inbox, MessagesSquare, X } from "lucide-react";
 import AttendanceNotificationCard, { AttendanceNotificationPayload } from "./AttendanceNotificationCard";
 import { purgeExpiredAttendanceNotifications } from "./purgeExpiredAttendanceNotifications";
+import { filterAndPurgeInactiveAttendanceNotifications } from "./attendanceNotificationFilter";
+import { purgeExpiredFaceScanSnapshots } from "../Attendance/CheckinOutPage/faceScanStoragePurge";
 
 interface NotificationItem {
   id: string;
@@ -69,13 +71,23 @@ const NotificationsPage: React.FC = () => {
     );
 
     const unsub = onSnapshot(q, (snapshot) => {
-      setSystemNotifications(snapshot.docs.map((notificationDoc) => ({
+      const rawDocs = snapshot.docs.map((notificationDoc) => ({
         id: notificationDoc.id,
         path: notificationDoc.ref.path,
         ...(notificationDoc.data() as Omit<NotificationItem, "id" | "path">),
-        source: "system",
-      })));
-      setIsLoading(false);
+        source: "system" as const,
+      }));
+
+      filterAndPurgeInactiveAttendanceNotifications(rawDocs, schoolId)
+        .then((filteredDocs) => {
+          setSystemNotifications(filteredDocs);
+          setIsLoading(false);
+        })
+        .catch((error) => {
+          console.error("Error filtering notifications:", error);
+          setSystemNotifications(rawDocs);
+          setIsLoading(false);
+        });
 
       // เก็บกวาดแจ้งเตือนการลงเวลาที่ข้ามวันไปแล้วทิ้ง กันฐานข้อมูลบวม (เก็บไว้แค่วันปัจจุบัน)
       purgeExpiredAttendanceNotifications(snapshot.docs.map((notificationDoc) => ({
@@ -83,13 +95,18 @@ const NotificationsPage: React.FC = () => {
         type: notificationDoc.data().type,
         createdAt: notificationDoc.data().createdAt,
       })));
+
+      // ลบภาพถ่ายสแกนใบหน้าที่เกิน 2 วันใน Firebase Storage อัตโนมัติ (ตาม PDPA)
+      if (schoolId) {
+        purgeExpiredFaceScanSnapshots(schoolId, 2);
+      }
     }, (error) => {
       console.error("Error listening notifications:", error);
       setIsLoading(false);
     });
 
     return () => unsub();
-  }, [currentUser?.uid]);
+  }, [currentUser?.uid, schoolId]);
 
   useEffect(() => {
     if (!currentUser?.uid || !schoolId) {

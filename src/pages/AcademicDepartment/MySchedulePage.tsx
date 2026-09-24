@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
-import { CalendarDays, Loader2, School, UserRound } from 'lucide-react';
+import { CalendarDays, CheckCircle2, Loader2, School, UserRound } from 'lucide-react';
 import { RootState } from '@/store';
 import { firestore as db } from '@/firebase';
 import MainLayout from '@/layouts/MainLayout';
@@ -420,6 +420,9 @@ const MySchedulePage: React.FC = () => {
                   course: { ...course, groupNumber: groupNum, teacherPeriodLabel },
                   className,
                   roomDisplay,
+                  rawClassId: data.classId,
+                  classLevels: assignment?.classLevels,
+                  assignmentRoom: assignment?.room || (Array.isArray(course.room) ? undefined : course.room),
                 }, 'teacher');
 
                 return;
@@ -518,7 +521,19 @@ const MySchedulePage: React.FC = () => {
               </div>
             </div>
 
-            <div className="pt-3 sm:pt-4">
+            {/* แถบหมายเหตุแบบกะทัดรัด ประหยัดพื้นที่ */}
+            {mode !== 'student' && (
+              <div className="mt-2.5 px-3 py-1.5 rounded-lg bg-orange-50/90 dark:bg-orange-950/30 border border-orange-300 dark:border-orange-500/50 flex items-center gap-2 text-xs text-orange-950 dark:text-orange-100 shadow-2xs">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-red-600 text-white text-[10px] font-black tracking-wide shrink-0">
+                  หมายเหตุ
+                </span>
+                <span className="font-semibold truncate sm:whitespace-normal">
+                  ครูสามารถเช็คชื่อบนตารางสอนได้ (คลิกที่คาบเรียนในตารางเพื่อทำการเช็คชื่อได้ทันที)
+                </span>
+              </div>
+            )}
+
+            <div className="pt-2 sm:pt-3">
               {isLoading ? (
                 <div className="flex flex-col justify-center items-center py-16 text-gray-500 dark:text-gray-400">
                   <Loader2 className="animate-spin text-indigo-500 mb-3" size={34} />
@@ -542,6 +557,8 @@ const MySchedulePage: React.FC = () => {
                   clubs={clubs}
                   viewerId={person.docId}
                   mode={mode || 'teacher'}
+                  academicYear={academicYear}
+                  semester={currentTerm}
                 />
               )}
             </div>

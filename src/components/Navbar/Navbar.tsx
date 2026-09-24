@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "@/store";
@@ -33,7 +33,8 @@ import { MessagesSquare } from "lucide-react";
 // import liff from "@line/liff"; // 📌 นำ LIFF ออกตามคำขอ
 
 import defaultProfile from "@/assets/profile.png";
-import SearchSidebar from "@/components/SearchSidebar/SearchSidebar";
+// โหลดเมื่อเปิดค้นหาเท่านั้น — SearchSidebar ลาก pdfjs-dist (~3MB) มาด้วย ไม่ควรอยู่ใน bundle ของทุกหน้า
+const SearchSidebar = lazy(() => import("@/components/SearchSidebar/SearchSidebar"));
 import LeftSidebar from "../Sidebar/LeftSidebar";
 import SkeletonLoader from "@/components/SkeletonLoader";
 import { useTheme } from "@/ThemeContext";
@@ -42,6 +43,7 @@ import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 import { usePwaMode } from "@/hooks/usePwaMode";
 import { PWA_ATTENDANCE_HUB_PATH, PWA_MY_SCHEDULE_PATH } from "@/utils/pwaMode";
 import { useSchoolScope } from "@/hooks/useEffectiveSchool";
+import { filterAndPurgeInactiveAttendanceNotifications } from "@/pages/Notifications/attendanceNotificationFilter";
 
 /* -------------------- types -------------------- */
 interface Notification {
@@ -52,6 +54,8 @@ interface Notification {
   createdAt: Timestamp;
   link?: string;
   source?: "system" | "club-request";
+  type?: "attendance" | string;
+  attendance?: any;
   clubRequest?: {
     requestId: string;
     approvalSide: "exit" | "entry";
@@ -156,17 +160,27 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
             ...(doc.data() as Omit<Notification, 'id' | 'path'>),
           } as Notification;
         });
-        setNotifications(data);
-        setIsLoadingNoti(false);
 
-        // เล่นเสียงแจ้งเตือนเฉพาะตอนมีรายการใหม่ล่าสุดโผล่มาจริงๆ (ไม่เล่นตอนโหลดหน้าครั้งแรก
-        // และไม่เล่นซ้ำตอน snapshot ยิงใหม่จากแค่การมาร์คอ่านแล้ว ที่ id บนสุดยังเหมือนเดิม)
-        const newTopId = data[0]?.id ?? null;
-        if (!isFirstNotificationSnapshotRef.current && newTopId && newTopId !== lastTopNotificationIdRef.current) {
-          playNotificationSound();
-        }
-        isFirstNotificationSnapshotRef.current = false;
-        lastTopNotificationIdRef.current = newTopId;
+        // กรองเฉพาะนักเรียนที่สถานะกำลังศึกษาอยู่เท่านั้น และลบแจ้งเตือนของนักเรียนสถานะอื่นออกจาก Firestore
+        filterAndPurgeInactiveAttendanceNotifications(data, resolvedSchoolId)
+          .then((filteredData) => {
+            setNotifications(filteredData);
+            setIsLoadingNoti(false);
+
+            // เล่นเสียงแจ้งเตือนเฉพาะตอนมีรายการใหม่ล่าสุดโผล่มาจริงๆ (ไม่เล่นตอนโหลดหน้าครั้งแรก
+            // และไม่เล่นซ้ำตอน snapshot ยิงใหม่จากแค่การมาร์คอ่านแล้ว ที่ id บนสุดยังเหมือนเดิม)
+            const newTopId = filteredData[0]?.id ?? null;
+            if (!isFirstNotificationSnapshotRef.current && newTopId && newTopId !== lastTopNotificationIdRef.current) {
+              playNotificationSound();
+            }
+            isFirstNotificationSnapshotRef.current = false;
+            lastTopNotificationIdRef.current = newTopId;
+          })
+          .catch((error) => {
+            console.error("Error filtering inactive attendance notifications:", error);
+            setNotifications(data);
+            setIsLoadingNoti(false);
+          });
       },
       (error) => {
         console.error("Error listening to notifications:", error);
@@ -176,7 +190,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
     );
 
     return () => unsub();
-  }, [currentUser?.uid, isOwnerRoute]);
+  }, [currentUser?.uid, isOwnerRoute, resolvedSchoolId]);
 
   useEffect(() => {
     const userType = localStorage.getItem('currentUserType');
@@ -557,16 +571,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
                 <FaChalkboardTeacher className={navIconSizeClass} aria-hidden="true" />
               </button>
             </div>
-          ) : !isAttendanceEntryOnly(currentUser?.role) && (
-            <div className="hidden md:flex items-center gap-6">
-              <button type="button" className={`${iconClass("home")} bg-transparent border-0 p-0`} title="หน้าแรก" aria-label="หน้าแรก" onClick={() => navigate("/home")}>
-                <FaHome className={navIconSizeClass} aria-hidden="true" />
-              </button>
-              <button type="button" className={`${iconClass("attendance")} bg-transparent border-0 p-0`} title="ระบบเช็คชื่อ" aria-label="ระบบเช็คชื่อ" onClick={() => navigate("/academic/hub/attendance")}>
-                <FaUserCheck className={navIconSizeClass} aria-hidden="true" />
-              </button>
-            </div>
-          )}
+          ) : null}
 
           {/* Right */}
           <div className="flex items-center gap-3">
@@ -804,7 +809,11 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
         </div>
       </nav>
 
-      {isSearchOpen && <SearchSidebar onClose={() => setIsSearchOpen(false)} history={[]} schoolId={schoolId} />}
+      {isSearchOpen && (
+        <Suspense fallback={null}>
+          <SearchSidebar onClose={() => setIsSearchOpen(false)} history={[]} schoolId={schoolId} />
+        </Suspense>
+      )}
 
       {/* Mobile Sidebar */}
       {isMobileMenuOpen && (

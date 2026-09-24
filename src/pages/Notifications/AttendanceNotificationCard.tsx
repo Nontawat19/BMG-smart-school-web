@@ -1,8 +1,11 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useTheme } from "@/ThemeContext";
+import { X, Download, Eye, ShieldCheck } from "lucide-react";
 
 export interface AttendanceNotificationPayload {
   studentId: string;
+  studentStatus?: string;
   name: string;
   displayId: string;
   grade: string;
@@ -93,6 +96,17 @@ const AttendanceNotificationCard: React.FC<AttendanceNotificationCardProps> = ({
   const isLate = status === "สาย";
   const isLeave = status === "ลา" || (status || "").startsWith("ลา");
   const isAbsent = status === "ขาด";
+
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isPreviewOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsPreviewOpen(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isPreviewOpen]);
 
   let bubbleBg = "bg-emerald-50 dark:bg-emerald-500/10";
   let bubbleIconBg = "bg-emerald-500";
@@ -201,26 +215,111 @@ const AttendanceNotificationCard: React.FC<AttendanceNotificationCardProps> = ({
           <p className={`font-bold text-gray-800 dark:text-gray-200 ${compact ? "mb-1.5 text-xs" : "mb-2 text-sm"}`}>
             ภาพยืนยันจากการสแกนใบหน้า
           </p>
-          <a
-            href={faceScanImageUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            title="คลิกเพื่อดูภาพขนาดเต็ม"
-            className="block overflow-hidden rounded-xl group relative"
+          <button
+            type="button"
+            onClick={() => setIsPreviewOpen(true)}
+            className="group relative block w-full overflow-hidden rounded-xl text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             <img
               src={faceScanImageUrl}
               alt="ภาพยืนยันจากการสแกนใบหน้า"
               className="aspect-video w-full rounded-xl bg-gray-100 object-cover transition-transform duration-300 group-hover:scale-[1.02] dark:bg-[#1e1f21]"
             />
+            <div className="absolute inset-0 bg-black/20 opacity-0 transition-opacity group-hover:opacity-100 flex items-center justify-center">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-black/75 px-3 py-1 text-xs font-semibold text-white shadow-lg backdrop-blur-md transition-transform group-hover:scale-105">
+                <Eye className="h-3.5 w-3.5" />
+                คลิกเพื่อดูภาพขนาดเต็ม
+              </span>
+            </div>
             <span className="absolute bottom-2 right-2 rounded-md bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100">
               ดูภาพเต็ม
             </span>
-          </a>
+          </button>
           <p className={`text-gray-400 ${compact ? "mt-1 text-[11px]" : "mt-1 text-xs"}`}>
             {faceConfidence !== null ? `ความมั่นใจในการยืนยันตัวตน ${Math.round(faceConfidence * 100)}%` : "บันทึกจากระบบสแกนใบหน้า"}
           </p>
         </div>
+      )}
+
+      {/* In-page Full Preview Modal (PDF / Document Viewer Style) */}
+      {isPreviewOpen && faceScanImageUrl && createPortal(
+        <div
+          className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 p-3 sm:p-6 backdrop-blur-md animate-in fade-in duration-200"
+          onClick={() => setIsPreviewOpen(false)}
+        >
+          <div
+            className="relative flex flex-col w-full max-w-4xl max-h-[94vh] rounded-2xl bg-white dark:bg-[#1e1f21] shadow-2xl border border-gray-200 dark:border-gray-800 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3.5 dark:border-gray-800 bg-gray-50/80 dark:bg-[#25272c]/80 backdrop-blur-sm">
+              <div className="min-w-0 pr-4">
+                <div className="flex items-center gap-2">
+                  <h3 className="truncate text-base font-bold text-gray-900 dark:text-white">
+                    ภาพยืนยันจากการสแกนใบหน้า
+                  </h3>
+                  {faceConfidence !== null && (
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
+                      ความมั่นใจ {Math.round(faceConfidence * 100)}%
+                    </span>
+                  )}
+                </div>
+                <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
+                  {name} ({displayId}) • ชั้น {grade}{room ? `/${room}` : ""} • เวลา {time} น. • {displayStatusText}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <a
+                  href={faceScanImageUrl}
+                  download={`facescan_${displayId}_${Date.now()}.jpg`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                  title="ดาวน์โหลดภาพต้นฉบับ"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">ดาวน์โหลด</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setIsPreviewOpen(false)}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-gray-400 transition hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-white"
+                  title="ปิด (Esc)"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Image Body */}
+            <div className="relative flex-1 overflow-auto bg-neutral-900 p-4 sm:p-6 flex items-center justify-center min-h-[300px]">
+              <img
+                src={faceScanImageUrl}
+                alt="ภาพยืนยันจากการสแกนใบหน้าขนาดเต็ม"
+                className="max-h-[72vh] w-auto max-w-full rounded-xl object-contain shadow-2xl border border-white/10"
+              />
+            </div>
+
+            {/* Modal Footer / Storage notice */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-gray-200 px-5 py-3 dark:border-gray-800 bg-gray-50/80 dark:bg-[#25272c]/80 text-xs">
+              <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+                <ShieldCheck className="h-4 w-4 text-emerald-500 shrink-0" />
+                <span>
+                  ภาพสแกนใบหน้านี้จัดเก็บในระบบตามมาตรฐาน PDPA <strong>2 วัน</strong> และจะทำการลบออกจากระบบจัดเก็บอัตโนมัติ
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPreviewOpen(false)}
+                className="shrink-0 rounded-xl bg-gray-200 px-4 py-1.5 font-bold text-gray-700 transition hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

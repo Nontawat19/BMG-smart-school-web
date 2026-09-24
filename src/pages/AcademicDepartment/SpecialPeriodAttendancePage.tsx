@@ -151,7 +151,25 @@ const SpecialPeriodAttendancePage: React.FC = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [attendance, setAttendance] = useState<Record<string, AttendanceStatus>>({});
   const [studentLeaves, setStudentLeaves] = useState<Record<string, { isLeave: boolean; leaveType?: string }>>({});
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState(() => {
+    const dateParam = searchParams.get('date');
+    if (dateParam) {
+      const parsed = new Date(dateParam);
+      if (Number.isFinite(parsed.getTime())) return parsed;
+    }
+    return new Date();
+  });
+
+  useEffect(() => {
+    const dateParam = searchParams.get('date');
+    if (dateParam) {
+      const parsed = new Date(dateParam);
+      if (Number.isFinite(parsed.getTime())) {
+        setCurrentDate(parsed);
+      }
+    }
+  }, [searchParams]);
+
   const [studentSearch, setStudentSearch] = useState('');
   const [studentsLoading, setStudentsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);

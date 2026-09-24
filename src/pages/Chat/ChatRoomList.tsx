@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { useSelector } from "react-redux";
 import { RootState } from "@/store";
 import { firestore } from "@/firebase";
@@ -7,9 +7,9 @@ import { collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, s
 import { School, Briefcase, Users, Search, Check, X, Clock, UsersRound, Plus, MessageSquare } from "lucide-react";
 import { SCHOOL_CHAT_ROOM_ID, DEPARTMENT_CHATS, parentRoomId, studentDirectRoomId, studentHomeroomRoomId, staffDirectRoomId, getChatSchoolId, formatChatListTime } from "./chatConstants";
 import { useChatWidget } from "./ChatWidgetContext";
-import GroupChatCreator from "./GroupChatCreator";
-import JoinDeptChatModal from "./JoinDeptChatModal";
-import StaffChatPickerModal from "./StaffChatPickerModal";
+const GroupChatCreator = lazy(() => import("./GroupChatCreator"));
+const JoinDeptChatModal = lazy(() => import("./JoinDeptChatModal"));
+const StaffChatPickerModal = lazy(() => import("./StaffChatPickerModal"));
 import { isAttendanceOfficerAccount } from "./useChatMessages";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 import { isStudyingStudent } from "@/utils/studentStatusUtils";
@@ -565,16 +565,18 @@ const ChatRoomList: React.FC<{ onSelectRoom: (roomId: string) => void }> = ({ on
       </div>
 
       {showGroupCreator && schoolId && currentUser?.uid && (
-        <GroupChatCreator
-          schoolId={schoolId}
-          teacherUid={currentUser.uid}
-          teacherName={(currentUser as any)?.fullName || "เจ้าหน้าที่"}
-          onClose={() => setShowGroupCreator(false)}
-          onCreated={(roomId) => {
-            setShowGroupCreator(false);
-            onSelectRoom(roomId);
-          }}
-        />
+        <Suspense fallback={null}>
+          <GroupChatCreator
+            schoolId={schoolId}
+            teacherUid={currentUser.uid}
+            teacherName={(currentUser as any)?.fullName || "เจ้าหน้าที่"}
+            onClose={() => setShowGroupCreator(false)}
+            onCreated={(roomId) => {
+              setShowGroupCreator(false);
+              onSelectRoom(roomId);
+            }}
+          />
+        </Suspense>
       )}
 
       <div className="max-h-[420px] overflow-y-auto px-1.5 pb-2">
@@ -743,32 +745,36 @@ const ChatRoomList: React.FC<{ onSelectRoom: (roomId: string) => void }> = ({ on
       </div>
 
       {showStaffPicker && schoolId && currentUser?.uid && (
-        <StaffChatPickerModal
-          schoolId={schoolId}
-          currentUid={currentUser.uid}
-          onClose={() => setShowStaffPicker(false)}
-          onSelectUser={(targetUid) => {
-            setShowStaffPicker(false);
-            onSelectRoom(staffDirectRoomId(currentUser.uid, targetUid));
-          }}
-          onOpenGroupCreator={() => {
-            setShowStaffPicker(false);
-            setShowGroupCreator(true);
-          }}
-        />
+        <Suspense fallback={null}>
+          <StaffChatPickerModal
+            schoolId={schoolId}
+            currentUid={currentUser.uid}
+            onClose={() => setShowStaffPicker(false)}
+            onSelectUser={(targetUid) => {
+              setShowStaffPicker(false);
+              onSelectRoom(staffDirectRoomId(currentUser.uid, targetUid));
+            }}
+            onOpenGroupCreator={() => {
+              setShowStaffPicker(false);
+              setShowGroupCreator(true);
+            }}
+          />
+        </Suspense>
       )}
 
       {showJoinDeptChat && schoolId && currentUser?.uid && (
-        <JoinDeptChatModal
-          schoolId={schoolId}
-          currentUid={currentUser.uid}
-          alreadyJoinedRoomIds={deptChatRoomIds}
-          onClose={() => setShowJoinDeptChat(false)}
-          onJoined={(roomId) => {
-            setShowJoinDeptChat(false);
-            onSelectRoom(roomId);
-          }}
-        />
+        <Suspense fallback={null}>
+          <JoinDeptChatModal
+            schoolId={schoolId}
+            currentUid={currentUser.uid}
+            alreadyJoinedRoomIds={deptChatRoomIds}
+            onClose={() => setShowJoinDeptChat(false)}
+            onJoined={(roomId) => {
+              setShowJoinDeptChat(false);
+              onSelectRoom(roomId);
+            }}
+          />
+        </Suspense>
       )}
     </div>
   );

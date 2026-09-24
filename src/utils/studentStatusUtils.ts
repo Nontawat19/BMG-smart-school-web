@@ -12,10 +12,18 @@ export const ARCHIVED_STUDENT_STATUSES = [
   'สำเร็จการศึกษา',
   'รออนุมัติจบ',
   'ซ้ำชั้น',
+  'พักการเรียน',
+  'แขวนลอย',
+  'เสียชีวิต',
+  'พ้นสภาพ',
+  'หมดสภาพ',
   'graduated',
   'exited',
   'pending_grad',
   'repeat',
+  'drop',
+  'suspended',
+  'dismissed',
 ];
 
 export const EXIT_STUDENT_STATUSES = ['ย้าย', 'ลาออก', 'จำหน่าย', 'จำหน่ายชื่อออก'];
@@ -41,6 +49,7 @@ export const isExitStudentStatus = (status?: string) => {
 };
 
 export const isActiveStudentStatus = (status?: string) => {
+  if (!status) return false;
   return normalizeStudentStatus(status) === ACTIVE_STUDENT_STATUS && !isArchivedStudentStatus(status);
 };
 
@@ -49,9 +58,15 @@ export const isArchivedStudent = (student: any) => isArchivedStudentStatus(getSt
 export const isCurrentStudent = (student: any) => !isArchivedStudent(student);
 
 export const isStudyingStudent = (student: any) => {
+  if (!student) return false;
+  if (typeof student === 'string') {
+    return isActiveStudentStatus(student);
+  }
   const rawStatus = student?.status || student?.studentStatus;
-  if (!rawStatus) return false;
-  return getStudentStatus(student) === ACTIVE_STUDENT_STATUS;
+  if (rawStatus !== undefined && rawStatus !== null && String(rawStatus).trim() !== '') {
+    return isActiveStudentStatus(rawStatus);
+  }
+  return true;
 };
 
 export const buildDuplicateStudentHtml = (student: any) => {

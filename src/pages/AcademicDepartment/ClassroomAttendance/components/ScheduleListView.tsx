@@ -11,6 +11,7 @@ interface ScheduleListViewProps {
     inactiveCourseIds: Set<string>;
     isCurrentPeriod: (start: string, end: string) => boolean;
     currentDate: Date;
+    roomMap?: Record<string, string>;
 }
 
 const ScheduleListView: React.FC<ScheduleListViewProps> = ({
@@ -20,9 +21,24 @@ const ScheduleListView: React.FC<ScheduleListViewProps> = ({
     inactiveCourseIds,
     isCurrentPeriod,
     currentDate,
+    roomMap,
 }) => {
     const isPwaMode = usePwaMode();
     const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+
+    const getScheduleRoomDisplay = (schedule: CourseSchedule) => {
+        const raw = schedule.room;
+        if (!raw || raw === 'all') return '';
+        if (roomMap && roomMap[raw]) return roomMap[raw];
+        if (Array.isArray(schedule.roomIds) && schedule.roomIds.length > 0 && roomMap) {
+            const found = schedule.roomIds
+                .map(id => roomMap[id] || id)
+                .filter(v => v && v !== 'all' && !/^[A-Za-z0-9]{18,24}$/.test(v));
+            if (found.length > 0) return found.join(', ');
+        }
+        if (/^[A-Za-z0-9]{18,24}$/.test(raw)) return '';
+        return raw;
+    };
 
     if (loading) {
         return (
@@ -120,10 +136,10 @@ const ScheduleListView: React.FC<ScheduleListViewProps> = ({
                                             {schedule.subjectCode && <span className="font-medium text-indigo-600 dark:text-indigo-400">{schedule.subjectCode}</span>}
                                             {schedule.subjectCode && <span className="w-1 h-1 bg-gray-300 rounded-full"></span>}
                                             <span className="inline-flex items-center gap-1"><Clock size={14} /> {timeLabel}</span>
-                                            {schedule.room && schedule.room !== 'all' && (
+                                            {getScheduleRoomDisplay(schedule) && (
                                                 <>
                                                     <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
-                                                    <span className="inline-flex items-center gap-1"><MapPin size={14} /> {schedule.room}</span>
+                                                    <span className="inline-flex items-center gap-1"><MapPin size={14} /> {getScheduleRoomDisplay(schedule)}</span>
                                                 </>
                                             )}
                                         </p>
@@ -189,9 +205,9 @@ const ScheduleListView: React.FC<ScheduleListViewProps> = ({
                                     <p className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
                                         <Clock size={11} /> {timeLabel}
                                     </p>
-                                    {schedule.room && schedule.room !== 'all' && (
+                                    {getScheduleRoomDisplay(schedule) && (
                                         <p className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 ml-2">
-                                            <MapPin size={11} /> {schedule.room}
+                                            <MapPin size={11} /> {getScheduleRoomDisplay(schedule)}
                                         </p>
                                     )}
                                 </div>

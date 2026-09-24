@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import BackButton from "@/components/Shared/BackButton";
 import MainLayout from "@/layouts/MainLayout";
@@ -42,7 +42,26 @@ type PendingHomeroomPhoto = {
 const HomeroomAttendancePage: React.FC = () => {
     const isPwaMode = usePwaMode();
     const navigate = useNavigate();
-    const [currentDate, setCurrentDate] = useState(new Date());
+    const [searchParams] = useSearchParams();
+    const [currentDate, setCurrentDate] = useState(() => {
+        const dateParam = searchParams.get('date');
+        if (dateParam) {
+            const parsed = new Date(dateParam);
+            if (Number.isFinite(parsed.getTime())) return parsed;
+        }
+        return new Date();
+    });
+
+    useEffect(() => {
+        const dateParam = searchParams.get('date');
+        if (dateParam) {
+            const parsed = new Date(dateParam);
+            if (Number.isFinite(parsed.getTime())) {
+                setCurrentDate(parsed);
+            }
+        }
+    }, [searchParams]);
+
     const [selectedClass, setSelectedClass] = useState<CourseSchedule | null>(null);
     const [students, setStudents] = useState<Student[]>([]);
     const [attendance, setAttendance] = useState<Record<string, 'present' | 'absent' | 'late' | 'leave' | 'escape'>>({});
