@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useSelector } from "react-redux";
+import { RootState } from "@/store";
 import { Camera, Check, ExternalLink, FileText, MessageCircle, Minus, Paperclip, Pencil, Plus, Reply, School, Send, Smile, Sticker as StickerIcon, UserPlus, UsersRound, X } from "lucide-react";
 import { useChatMessages, ChatMessage } from "./useChatMessages";
 import StickerPicker from "./StickerPicker";
@@ -27,6 +29,7 @@ interface Props {
  */
 const FloatingChatWindow: React.FC<Props> = ({ roomId, minimized, offsetRight, onClose, onToggleMinimize }) => {
   const navigate = useNavigate();
+  const schoolLogoUrl = useSelector((state: RootState) => (state as any).schoolSettings?.logoUrl || (state as any).profile?.schoolLogoUrl || "");
   const { messages, sendMessage, sendSticker, sendGif, sendImage, sendDocument, isSending, isMine: chatIsMine, getMessageReadStatus, title, otherPartyName, otherPartyPhotoUrl, groupMemberCount, onlineTeacherCount, totalTeacherCount, isOtherPartyOnline, isDeptMember, schoolId, roomType, roomStatus, updateRoomTitle } = useChatMessages(roomId, !minimized);
   const isSchoolRoom = roomType === "school" || roomId === SCHOOL_CHAT_ROOM_ID;
   const isOneOnOneRoom = roomType === "parent" || roomType === "student-direct" || roomType === "student-homeroom";
@@ -349,6 +352,18 @@ const FloatingChatWindow: React.FC<Props> = ({ roomId, minimized, offsetRight, o
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white">
             <UsersRound size={16} />
           </div>
+        ) : roomType === "staff-attendance" ? (
+          schoolLogoUrl ? (
+            <img
+              src={schoolLogoUrl}
+              alt="School Logo"
+              className="h-9 w-9 shrink-0 rounded-full object-cover bg-white p-0.5 border border-gray-200 dark:border-gray-600 shadow-xs"
+            />
+          ) : (
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-600 text-white">
+              <School size={17} />
+            </div>
+          )
         ) : (roomId === SCHOOL_CHAT_ROOM_ID || otherPartyPhotoUrl) ? (
           otherPartyPhotoUrl ? (
             <img

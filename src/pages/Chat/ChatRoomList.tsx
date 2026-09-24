@@ -442,7 +442,11 @@ const ChatRoomList: React.FC<{ onSelectRoom: (roomId: string) => void }> = ({ on
       },
       {
         roomId: STAFF_ATTENDANCE_CHAT_ROOM_ID,
-        icon: <Clock size={20} />,
+        icon: schoolLogoUrl ? (
+          <img src={schoolLogoUrl} alt="Logo" className="h-full w-full rounded-full object-cover bg-white p-0.5" />
+        ) : (
+          <Clock size={20} />
+        ),
         title: STAFF_ATTENDANCE_CHAT_TITLE,
         subtitle: "แจ้งเตือนอัตโนมัติ",
         colorClass: "bg-teal-600",

@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
+import { useSelector } from "react-redux";
+import { RootState } from "@/store";
 import { Send, MessageCircle, Reply, Smile, X, FileText, ExternalLink, Pencil, Check, School, Paperclip, Camera, Sticker as StickerIcon, Plus } from "lucide-react";
 import { formatChatMessageDateTime, getReplyPreviewText, SCHOOL_CHAT_ROOM_ID } from "./chatConstants";
 import { stickerFileUrl } from "./stickerConstants";
@@ -15,6 +17,7 @@ import AttendanceNotificationCard from "@/pages/Notifications/AttendanceNotifica
 import { useChatMessages, ChatMessage } from "./useChatMessages";
 
 const ChatRoomPage: React.FC = () => {
+  const schoolLogoUrl = useSelector((state: RootState) => (state as any).schoolSettings?.logoUrl || (state as any).profile?.schoolLogoUrl || "");
   const navigate = useNavigate();
   const { roomId = "" } = useParams<{ roomId: string }>();
   const [text, setText] = useState("");
@@ -219,7 +222,13 @@ const ChatRoomPage: React.FC = () => {
         <header className="shrink-0 border-b border-gray-100 bg-white p-4 dark:border-gray-800 dark:bg-[#2a2b2f]">
           <div className="mx-auto flex max-w-2xl items-center gap-3">
             <BackButton to="/chat" />
-            {otherPartyPhotoUrl ? (
+            {roomType === "staff-attendance" && schoolLogoUrl ? (
+              <img
+                src={schoolLogoUrl}
+                alt="School Logo"
+                className="h-10 w-10 shrink-0 rounded-full object-cover bg-white p-0.5 border border-gray-200 dark:border-gray-700 shadow-xs"
+              />
+            ) : otherPartyPhotoUrl ? (
               <img
                 src={otherPartyPhotoUrl}
                 alt={title}
