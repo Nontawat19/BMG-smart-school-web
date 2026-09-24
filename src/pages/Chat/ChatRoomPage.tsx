@@ -585,7 +585,8 @@ const ChatRoomPage: React.FC = () => {
           </div>
         )}
 
-        {/* แถบพิมพ์ข้อความสไตล์ Enterprise Workspace Card (ไม่เลียนแบบ Facebook) */}
+        {/* แถบพิมพ์ข้อความสไตล์ Enterprise Workspace Card (ไม่เลียนแบบ Facebook) — ห้องแจ้งเตือนลงเวลาเป็นแบบอ่านอย่างเดียว */}
+        {roomType !== "staff-attendance" && (
         <div className="shrink-0 border-t border-gray-100 bg-gray-50/80 p-3 dark:border-gray-800/80 dark:bg-[#1a1b1e]">
           <div className="mx-auto max-w-2xl">
             <div className="flex flex-col rounded-2xl border border-gray-200/90 bg-white shadow-2xs transition-all focus-within:border-gray-300 dark:border-gray-700/80 dark:bg-[#202124] dark:focus-within:border-gray-600">
@@ -660,6 +661,7 @@ const ChatRoomPage: React.FC = () => {
             </div>
           </div>
         </div>
+        )}
 
         {showCamera && schoolId && (
           <CameraCapture schoolId={schoolId} roomId={roomId} onClose={() => setShowCamera(false)} onSent={handlePhotoSent} />

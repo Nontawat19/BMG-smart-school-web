@@ -1,8 +1,10 @@
 import { firestore } from "../../../firebase";
-import { addDoc, collection, deleteDoc, doc, getDocs, setDoc, Timestamp } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, setDoc, Timestamp } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { FoundUser } from "./types";
 import { isActiveStudentStatus } from "../../../utils/studentStatusUtils";
+import { isActiveTeacherSummaryStatus } from "../../../utils/ownerStatsUtils";
+import { STAFF_ATTENDANCE_CHAT_ROOM_ID, STAFF_ATTENDANCE_CHAT_TITLE } from "../../Chat/chatConstants";
 
 const getBangkokDateString = (date: Date) => date.toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
 
@@ -218,3 +220,62 @@ export const notifyParentInChat = async (
   );
 };
 
+
+/**
+ * ส่งข้อความลงเวลามา-กลับของครูเข้าห้องแชท "แจ้งเตือนการลงเวลา มา-กลับ" (staff-attendance-log)
+ * ให้บุคลากรทุกคนที่ไม่ใช่นักเรียนเห็น — เฉพาะครูที่สถานะ "อยู่" เท่านั้น
+ * (อ่านสถานะจากเอกสารครูโดยตรง เพราะแคชในหน้าสแกนอาจเก่า)
+ */
+export const notifyTeacherAttendanceInStaffChat = async (
+  schoolId: string | null | undefined,
+  teacher: FoundUser,
+  status: string,
+  time: string,
+  actionType: string = "checkin"
+) => {
+  if (!schoolId || !teacher.id || teacher.type !== "teacher") return;
+
+  try {
+    const teacherSnap = await getDoc(doc(firestore, "school-settings", schoolId, "teachers", teacher.id));
+    if (!teacherSnap.exists() || !isActiveTeacherSummaryStatus(teacherSnap.data()?.status || "อยู่")) {
+      console.log(`[StaffChatNotify] Skipped: teacher ${teacher.name} is not active`);
+      return;
+    }
+  } catch (error) {
+    console.error("[StaffChatNotify] Error verifying teacher status:", error);
+    return;
+  }
+
+  const isCheckout = actionType === "checkout" || actionType === "checkin_and_checkout";
+  const displayStatusText = isCheckout && status !== "กลับก่อน" ? "ลงเวลากลับ" : status;
+  const text = `${teacher.name} ${displayStatusText}แล้วเวลา ${time} น.`;
+  const now = Timestamp.now();
+
+  try {
+    const messageRef = await addDoc(collection(firestore, "school-settings", schoolId, "chatRooms", STAFF_ATTENDANCE_CHAT_ROOM_ID, "messages"), {
+      senderUid: "system-attendance",
+      senderName: "ระบบลงเวลา",
+      senderRole: "staff",
+      senderPhotoUrl: teacher.profileImageUrl || "",
+      type: "text",
+      text,
+      createdAt: now,
+    });
+    await setDoc(doc(firestore, "school-settings", schoolId, "chatRooms", STAFF_ATTENDANCE_CHAT_ROOM_ID), {
+      type: "staff-attendance",
+      title: STAFF_ATTENDANCE_CHAT_TITLE,
+      lastMessageText: text,
+      lastMessageAt: now,
+      lastMessageSenderUid: "system-attendance",
+    }, { merge: true });
+
+    try {
+      const functions = getFunctions(undefined, "us-central1");
+      await httpsCallable(functions, "notifyStaffAttendanceChat")({ schoolId, messageId: messageRef.id });
+    } catch (pushErr) {
+      console.error("[StaffChatNotify] push error:", pushErr);
+    }
+  } catch (error) {
+    console.error("[StaffChatNotify] Error sending teacher attendance message:", error);
+  }
+};

@@ -59,7 +59,7 @@ const FloatingChatWindow: React.FC<Props> = ({ roomId, minimized, offsetRight, o
   const isPending = isGatedRoom && roomStatus === "pending";
   const isRejected = isGatedRoom && roomStatus === "rejected";
   const notYetDeptMember = isDeptRoom && isDeptMember === false;
-  const canChat = (!isGatedRoom || roomStatus === "approved") && !notYetDeptMember;
+  const canChat = (!isGatedRoom || roomStatus === "approved") && !notYetDeptMember && roomType !== "staff-attendance";
 
   const handleSaveTitle = async () => {
     if (!editTitle.trim()) return;

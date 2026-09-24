@@ -593,6 +593,8 @@ export const useChatMessages = (roomId: string, active: boolean = true) => {
     if (!schoolId || !roomId || isSending) return;
     if (roomType === "student-direct" && roomStatus !== "approved") return;
     if (roomType === "department" && !isDeptMember) return;
+    // ห้องแจ้งเตือนลงเวลาให้ระบบเขียนเท่านั้น
+    if (roomType === "staff-attendance") return;
     setIsSending(true);
     const sender = await resolveSender();
     try {

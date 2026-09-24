@@ -5,7 +5,7 @@ import { firestore } from "@/firebase";
 import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
 import { collection, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, where } from "firebase/firestore";
 import { School, Briefcase, Users, Search, Check, X, Clock, UsersRound, Plus, MessageSquare } from "lucide-react";
-import { SCHOOL_CHAT_ROOM_ID, DEPARTMENT_CHATS, parentRoomId, studentDirectRoomId, studentHomeroomRoomId, staffDirectRoomId, getChatSchoolId, formatChatListTime } from "./chatConstants";
+import { SCHOOL_CHAT_ROOM_ID, STAFF_ATTENDANCE_CHAT_ROOM_ID, STAFF_ATTENDANCE_CHAT_TITLE, DEPARTMENT_CHATS, parentRoomId, studentDirectRoomId, studentHomeroomRoomId, staffDirectRoomId, getChatSchoolId, formatChatListTime } from "./chatConstants";
 import { useChatWidget } from "./ChatWidgetContext";
 const GroupChatCreator = lazy(() => import("./GroupChatCreator"));
 const JoinDeptChatModal = lazy(() => import("./JoinDeptChatModal"));
@@ -439,6 +439,13 @@ const ChatRoomList: React.FC<{ onSelectRoom: (roomId: string) => void }> = ({ on
         title: schoolChatTitle,
         subtitle: "แชทหลัก",
         colorClass: "bg-indigo-600",
+      },
+      {
+        roomId: STAFF_ATTENDANCE_CHAT_ROOM_ID,
+        icon: <Clock size={20} />,
+        title: STAFF_ATTENDANCE_CHAT_TITLE,
+        subtitle: "แจ้งเตือนอัตโนมัติ",
+        colorClass: "bg-teal-600",
       },
       // แสดงเฉพาะฝ่ายงานที่ตัวเองเป็นสมาชิกอยู่แล้ว (ไม่ใช่ทุกฝ่ายเหมือนเดิม) — ฝ่ายอื่นที่ยังไม่ได้
       // เข้าร่วม เข้าถึงผ่านปุ่ม "เข้าร่วมฝ่ายงานอื่น" ด้านล่างแทน

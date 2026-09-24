@@ -270,6 +270,87 @@ exports.processPushNotification = functions.region("us-central1").https.onCall(a
 });
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ส่ง push ให้บุคลากรทุกคน (ครูสถานะ "อยู่") เมื่อมีข้อความใหม่ในห้อง "แจ้งเตือนการลงเวลา มา-กลับ"
+// หน้าสแกนเรียกหลังเขียนข้อความเข้าห้อง staff-attendance-log — ส่งครั้งเดียวจากเซิร์ฟเวอร์แทนการให้
+// client เรียก processPushNotification ทีละคน (ใช้ callable แทน Firestore trigger เพราะฐานข้อมูลอยู่
+// region asia-southeast3 ที่ Cloud Functions Gen1 ยังไม่รองรับ) ข้อความอ่านจากเอกสารในห้องจริง
+// ไม่รับข้อความจาก client และส่งได้ครั้งเดียวต่อข้อความ (pushedAt)
+exports.notifyStaffAttendanceChat = functions.region("us-central1").https.onCall(async (data, context) => {
+    if (!context.auth || context.auth.token?.firebase?.sign_in_provider === "anonymous") {
+        throw new functions.https.HttpsError("unauthenticated", "ต้องเข้าสู่ระบบก่อน");
+    }
+    const { schoolId, messageId } = data || {};
+    if (!schoolId || !messageId) {
+        throw new functions.https.HttpsError("invalid-argument", "ข้อมูลไม่ครบ");
+    }
+
+    const db = admin.firestore();
+    const msgRef = db.doc(`school-settings/${schoolId}/chatRooms/staff-attendance-log/messages/${messageId}`);
+    const msgSnap = await msgRef.get();
+    if (!msgSnap.exists) return { success: false, error: "Message not found" };
+    const msg = msgSnap.data();
+    if (msg.pushedAt || !msg.text) return { success: false, error: "Already pushed" };
+    await msgRef.update({ pushedAt: admin.firestore.FieldValue.serverTimestamp() });
+    const text = msg.text;
+
+    const teachersSnap = await db.collection(`school-settings/${schoolId}/teachers`).get();
+    const uids = teachersSnap.docs
+        .filter((d) => String(d.data().status || "อยู่").trim() === "อยู่")
+        .map((d) => d.id);
+
+    const tokenSnaps = await Promise.all(
+        uids.map((uid) => db.collection("users").doc(uid).collection("fcm_tokens").get())
+    );
+    const tokenRefs = [];
+    tokenSnaps.forEach((ts) => ts.docs.forEach((d) => {
+        const token = d.data().token;
+        if (token) tokenRefs.push({ token, ref: d.ref });
+    }));
+    if (tokenRefs.length === 0) return { success: false, error: "No tokens found" };
+
+    const appOrigin = "https://bmg-smartschool.web.app";
+    const title = "แจ้งเตือนการลงเวลา มา-กลับ";
+    const invalidRefs = [];
+    let sent = 0;
+
+    // sendEachForMulticast รับได้สูงสุด 500 token ต่อครั้ง
+    for (let i = 0; i < tokenRefs.length; i += 500) {
+        const chunk = tokenRefs.slice(i, i + 500);
+        const response = await admin.messaging().sendEachForMulticast({
+            tokens: chunk.map((t) => t.token),
+            webpush: {
+                notification: {
+                    title,
+                    body: text,
+                    icon: `${appOrigin}/pwa-192x192.png`,
+                    tag: `bmg-staff-attendance-${messageId}`,
+                },
+                data: {
+                    link: `${appOrigin}/chat/staff-attendance-log`,
+                    schoolId: String(schoolId),
+                    title,
+                    body: text,
+                },
+            },
+        });
+        sent += response.successCount;
+        response.responses.forEach((r, idx) => {
+            const code = r.error?.code;
+            if (!r.success && (code === "messaging/invalid-registration-token" || code === "messaging/registration-token-not-registered")) {
+                invalidRefs.push(chunk[idx].ref);
+            }
+        });
+    }
+
+    if (invalidRefs.length > 0) {
+        const batch = db.batch();
+        invalidRefs.forEach((ref) => batch.delete(ref));
+        await batch.commit();
+    }
+    console.log(`[StaffAttendancePush] school=${schoolId} ส่งสำเร็จ ${sent}/${tokenRefs.length} เครื่อง ลบ token หมดอายุ ${invalidRefs.length}`);
+    return { success: true, sent };
+});
+
 exports.cleanupFaceScanSnapshots = functions
     .region("us-central1")
     .pubsub.schedule("every 24 hours")

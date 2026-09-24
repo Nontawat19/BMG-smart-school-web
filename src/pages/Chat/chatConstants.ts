@@ -24,6 +24,10 @@ export const getChatSchoolId = (effectiveSchoolId: string | null): string | null
 
 export const SCHOOL_CHAT_ROOM_ID = "school-main";
 
+// ห้องแจ้งเตือนการลงเวลามา-กลับของครู (ระบบเขียนอัตโนมัติจากหน้าสแกน อ่านอย่างเดียว) บุคลากรทุกคนที่ไม่ใช่นักเรียน/ผู้ปกครองเห็น
+export const STAFF_ATTENDANCE_CHAT_ROOM_ID = "staff-attendance-log";
+export const STAFF_ATTENDANCE_CHAT_TITLE = "แจ้งเตือนการลงเวลา มา-กลับ";
+
 export const DEPARTMENT_CHATS: { key: string; roomId: string; label: string }[] = [
   { key: "academic", roomId: "dept-academic", label: "ฝ่ายวิชาการ" },
   { key: "general", roomId: "dept-general", label: "ฝ่ายบริหารทั่วไป" },
@@ -65,10 +69,11 @@ export const parseStaffDirectRoomId = (roomId: string): { uid1: string; uid2: st
 // เดียวกับห้อง parent-*/student-homeroom-* ที่อาศัยความเดายากของ id เป็นตัวควบคุมสิทธิ์การเข้าถึง)
 export const createGroupRoomId = () => `group-${doc(collection(firestore, "chatRooms")).id}`;
 
-export type ChatRoomType = "school" | "department" | "parent" | "student-direct" | "student-homeroom" | "group" | "staff-direct";
+export type ChatRoomType = "school" | "department" | "parent" | "student-direct" | "student-homeroom" | "group" | "staff-direct" | "staff-attendance";
 
 export const getRoomType = (roomId: string): ChatRoomType => {
   if (roomId === SCHOOL_CHAT_ROOM_ID) return "school";
+  if (roomId === STAFF_ATTENDANCE_CHAT_ROOM_ID) return "staff-attendance";
   if (roomId.startsWith("dept-")) return "department";
   if (roomId.startsWith("staff-direct-")) return "staff-direct";
   if (roomId.startsWith("student-direct-")) return "student-direct";
@@ -250,6 +255,7 @@ export const getMessageReadInfo = (
 // อธิบายบทบาทซ้ำอีกชั้น เพราะตอนนี้มีรูปโปรไฟล์ประกอบข้าง header อยู่แล้ว
 export const getRoomTitle = (roomId: string, otherPartyName?: string): string => {
   if (roomId === SCHOOL_CHAT_ROOM_ID) return otherPartyName || "แชทหลักของโรงเรียน";
+  if (roomId === STAFF_ATTENDANCE_CHAT_ROOM_ID) return STAFF_ATTENDANCE_CHAT_TITLE;
   const dept = DEPARTMENT_CHATS.find((d) => d.roomId === roomId);
   if (dept) return `แชท${dept.label}`;
   const roomType = getRoomType(roomId);

@@ -27,7 +27,7 @@ import { RootState } from "../../../store";
 import { isNonOfficialHoliday } from "../../../utils/calendarUtils";
 import { FoundUser } from "./types";
 import { sendLineAttendanceNotification, sendTeacherLineAttendanceNotification } from "./AttendanceLineNotify";
-import { notifyHomeroomTeachersInApp, notifyParentInApp, notifyParentInChat } from "./AttendanceInAppNotify";
+import { notifyHomeroomTeachersInApp, notifyParentInApp, notifyParentInChat, notifyTeacherAttendanceInStaffChat } from "./AttendanceInAppNotify";
 import { purgeExpiredFaceScanSnapshots } from "./faceScanStoragePurge";
 import { deg2rad, getDistanceFromLatLonInM, isPointInPolygon, getStatusKey } from "./utils";
 import HolidayBanner from "./HolidayBanner";
@@ -2092,6 +2092,7 @@ const CheckinOutPage: React.FC = () => {
     } else if (user.type === "teacher") {
       console.log(`[LINE] Triggering ${type} notification for teacher`, user.displayId, user.name, "status:", status);
       await sendTeacherLineNotification(user, status, timeStr, type);
+      await notifyTeacherAttendanceInStaffChat(schoolId, user, status, timeStr, type);
     }
   }, [schoolId, timeOffset, studentLateTime, teacherLateTime, studentCheckoutTime, teacherCheckoutTime, schoolSettings, currentAcademicYear, sendLineNotification, sendTeacherLineNotification, lockSelfCheckinDevice]);
 

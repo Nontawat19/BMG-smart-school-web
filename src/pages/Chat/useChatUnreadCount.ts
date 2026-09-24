@@ -4,7 +4,7 @@ import { RootState } from "@/store";
 import { auth, firestore } from "@/firebase";
 import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
 import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from "firebase/firestore";
-import { SCHOOL_CHAT_ROOM_ID, parentRoomId, studentHomeroomRoomId, getChatSchoolId, toMillis } from "./chatConstants";
+import { SCHOOL_CHAT_ROOM_ID, STAFF_ATTENDANCE_CHAT_ROOM_ID, parentRoomId, studentHomeroomRoomId, getChatSchoolId, toMillis } from "./chatConstants";
 import { isStudyingStudent } from "@/utils/studentStatusUtils";
 
 export interface RoomMetaState {
@@ -130,6 +130,7 @@ export const useChatRoomStates = (enabled: boolean): { roomStates: Record<string
       }
     } else {
       attachRoomListener(SCHOOL_CHAT_ROOM_ID);
+      attachRoomListener(STAFF_ATTENDANCE_CHAT_ROOM_ID);
       const roomsRef = collection(firestore, "school-settings", schoolId, "chatRooms");
       attachQueryListener(query(roomsRef, where("type", "==", "student-direct"), where("teacherUid", "==", uid)));
       attachQueryListener(query(roomsRef, where("type", "==", "group"), where("createdByUid", "==", uid)));
