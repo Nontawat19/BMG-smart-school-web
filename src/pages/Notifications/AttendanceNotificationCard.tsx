@@ -18,6 +18,9 @@ export interface AttendanceNotificationPayload {
   faceScanImageUrl: string;
   faceConfidence: number | null;
   behaviorScore: number;
+  // แจ้งเตือนของครู/บุคลากร (ห้อง "แจ้งเตือนการลงเวลา มา-กลับ"): ไม่มีคะแนนพฤติกรรม ใช้ roleLabel แทนชั้น/ห้อง
+  userType?: "student" | "teacher";
+  roleLabel?: string;
   stats: {
     present: number;
     late: number;
@@ -91,6 +94,7 @@ const AttendanceNotificationCard: React.FC<AttendanceNotificationCardProps> = ({
     name, displayId, grade, room, profileImageUrl, status, actionType, time,
     faceScanImageUrl, faceConfidence, behaviorScore, stats,
   } = attendance;
+  const isTeacher = attendance.userType === "teacher";
 
   const isCheckout = actionType === "checkout" || actionType === "checkin_and_checkout";
   const isLate = status === "สาย";
@@ -130,8 +134,13 @@ const AttendanceNotificationCard: React.FC<AttendanceNotificationCardProps> = ({
   }
 
   const displayStatusText = isCheckout && status !== "กลับก่อน" ? "ลงเวลากลับ" : status;
-  const bubbleMessage = isCheckout ? "บุตรหลาน/นักเรียนกำลังเดินทางกลับ" : (isLate ? "กรุณามาให้ทันเวลาในครั้งถัดไป" : "ทำรายการสำเร็จ");
-  const gradeRoom = grade ? `${grade}${room ? `/${room}` : ""}` : "";
+  const bubbleMessage = isTeacher
+    ? (isCheckout ? "คุณครูลงเวลากลับแล้ว" : (isLate ? "กรุณามาให้ทันเวลาในครั้งถัดไป" : "ทำรายการสำเร็จ"))
+    : (isCheckout ? "บุตรหลาน/นักเรียนกำลังเดินทางกลับ" : (isLate ? "กรุณามาให้ทันเวลาในครั้งถัดไป" : "ทำรายการสำเร็จ"));
+  const gradeRoom = isTeacher ? (attendance.roleLabel || "") : (grade ? `${grade}${room ? `/${room}` : ""}` : "");
+  const statRows = isTeacher
+    ? STAT_ROWS.map((row) => row.key === "present" ? { ...row, label: "มาทำงาน" } : row.key === "officialTravel" ? { ...row, label: "ไปราชการ" } : row)
+    : STAT_ROWS;
   const avatarUrl = profileImageUrl?.startsWith("https://")
     ? profileImageUrl
     : `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0D8ABC&color=fff&size=200`;
@@ -156,11 +165,11 @@ const AttendanceNotificationCard: React.FC<AttendanceNotificationCardProps> = ({
       {/* Stats box */}
       <div className={`rounded-xl border border-gray-100 bg-[#fcfcfc] dark:border-gray-700 dark:bg-[#1e1f21] ${compact ? "mt-2.5 p-2.5" : "mt-4 p-4"}`}>
         <p className={`font-bold text-gray-800 dark:text-gray-200 ${compact ? "mb-2 text-xs" : "mb-3 text-sm"}`}>
-          สถานะการเข้าเรียน ภาคเรียนนี้
+          {isTeacher ? "สถานะการมาทำงาน ภาคเรียนนี้" : "สถานะการเข้าเรียน ภาคเรียนนี้"}
         </p>
         <div className={`flex items-center ${compact ? "gap-2" : "gap-4"}`}>
           <div className={`flex-1 ${compact ? "space-y-1 text-xs" : "space-y-1.5 text-sm"}`}>
-            {STAT_ROWS.map((row) => (
+            {statRows.map((row) => (
               <div key={row.key} className="flex items-center justify-between">
                 <span className="text-gray-600 dark:text-gray-400 truncate mr-1">
                   <span className="mr-1">{row.dot}</span>{row.label}
@@ -192,7 +201,8 @@ const AttendanceNotificationCard: React.FC<AttendanceNotificationCardProps> = ({
         </div>
       </div>
 
-      {/* Behavior score */}
+      {/* Behavior score (เฉพาะนักเรียน) */}
+      {!isTeacher && (
       <div className={`rounded-xl border border-gray-100 bg-white dark:border-gray-700 dark:bg-[#2a2b2f] ${compact ? "mt-2.5 p-2.5" : "mt-3 p-4"}`}>
         <div className="flex items-center justify-between">
           <p className={`font-bold text-gray-800 dark:text-gray-200 ${compact ? "text-xs" : "text-sm"}`}>คะแนนพฤติกรรม ภาคเรียนนี้</p>
@@ -208,6 +218,7 @@ const AttendanceNotificationCard: React.FC<AttendanceNotificationCardProps> = ({
           </div>
         </div>
       </div>
+      )}
 
       {/* Face scan evidence */}
       {faceScanImageUrl && (
@@ -265,7 +276,7 @@ const AttendanceNotificationCard: React.FC<AttendanceNotificationCardProps> = ({
                   )}
                 </div>
                 <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
-                  {name} ({displayId}) • ชั้น {grade}{room ? `/${room}` : ""} • เวลา {time} น. • {displayStatusText}
+                  {name} ({displayId}) • {isTeacher ? gradeRoom : `ชั้น ${grade}${room ? `/${room}` : ""}`} • เวลา {time} น. • {displayStatusText}
                 </p>
               </div>
 

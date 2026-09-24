@@ -2,6 +2,7 @@ import { firestore } from "../../../firebase";
 import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, setDoc, Timestamp } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { FoundUser } from "./types";
+import { getTeacherRoleDisplay } from "./utils";
 import { isActiveStudentStatus } from "../../../utils/studentStatusUtils";
 import { isActiveTeacherSummaryStatus } from "../../../utils/ownerStatsUtils";
 import { STAFF_ATTENDANCE_CHAT_ROOM_ID, STAFF_ATTENDANCE_CHAT_TITLE } from "../../Chat/chatConstants";
@@ -250,6 +251,15 @@ export const notifyTeacherAttendanceInStaffChat = async (
   const displayStatusText = isCheckout && status !== "กลับก่อน" ? "ลงเวลากลับ" : status;
   const text = `${teacher.name} ${displayStatusText}แล้วเวลา ${time} น.`;
   const now = Timestamp.now();
+  // การ์ดเดียวกับของนักเรียน (รูปโปรไฟล์ สถิติภาคเรียน กราฟ สถานะ ภาพสแกนใบหน้า) แต่ไม่มีคะแนนพฤติกรรม
+  const attendancePayload = {
+    ...buildAttendancePayload(teacher, status, actionType, time),
+    userType: "teacher" as const,
+    roleLabel: getTeacherRoleDisplay(teacher),
+    grade: "",
+    room: "",
+    behaviorScore: 100,
+  };
 
   try {
     const messageRef = await addDoc(collection(firestore, "school-settings", schoolId, "chatRooms", STAFF_ATTENDANCE_CHAT_ROOM_ID, "messages"), {
@@ -257,8 +267,9 @@ export const notifyTeacherAttendanceInStaffChat = async (
       senderName: "ระบบลงเวลา",
       senderRole: "staff",
       senderPhotoUrl: teacher.profileImageUrl || "",
-      type: "text",
+      type: "attendance",
       text,
+      attendance: attendancePayload,
       createdAt: now,
     });
     await setDoc(doc(firestore, "school-settings", schoolId, "chatRooms", STAFF_ATTENDANCE_CHAT_ROOM_ID), {

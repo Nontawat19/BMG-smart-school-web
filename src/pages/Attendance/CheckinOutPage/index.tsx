@@ -1709,6 +1709,32 @@ const CheckinOutPage: React.FC = () => {
     }
   }, [schoolId, currentAcademicYear, schoolSettings]);
 
+  // สรุปสถิติการมาทำงานภาคเรียนปัจจุบันของครู (ใช้ทั้งแจ้งเตือน LINE และห้องแชทแจ้งเตือนการลงเวลา)
+  const fetchTeacherSemesterStats = useCallback(async (user: FoundUser) => {
+    const { semesterKey } = getPeriodKeys(getTodayString(), currentAcademicYear);
+    const semesterRef = doc(firestore, "school-settings", schoolId!, "teachers", user.id, "Semestersummary", semesterKey);
+    let semesterStats = { present: 0, late: 0, leave: 0, absent: 0, noCheckout: 0, officialTravel: 0 };
+    try {
+      const semesterSnap = await getDoc(semesterRef);
+      if (semesterSnap.exists()) {
+        const data = semesterSnap.data();
+        semesterStats = {
+          present: data.present || 0,
+          late: data.late || 0,
+          leave: data.leave || 0,
+          absent: data.absent || 0,
+          noCheckout: data.noCheckout || 0,
+          officialTravel: data.officialTravel || 0,
+        };
+      } else {
+        semesterStats = user.attendanceStats || semesterStats;
+      }
+    } catch (err) {
+      console.error("[Attendance] Error fetching teacher semester stats:", err);
+    }
+    return semesterStats;
+  }, [schoolId, currentAcademicYear]);
+
   const sendTeacherLineNotification = useCallback(async (
     user: FoundUser,
     status: string,
@@ -1734,35 +1760,7 @@ const CheckinOutPage: React.FC = () => {
       if (recipientUserIds.length === 0) return;
 
       // ดึงสรุปสถิติการมาทำงานภาคเรียนปัจจุบัน เหมือนกับที่ทำให้นักเรียน
-      const { semesterKey } = getPeriodKeys(getTodayString(), currentAcademicYear);
-      const semesterRef = doc(
-        firestore,
-        "school-settings",
-        schoolId!,
-        "teachers",
-        user.id,
-        "Semestersummary",
-        semesterKey
-      );
-      let semesterStats = { present: 0, late: 0, leave: 0, absent: 0, noCheckout: 0, officialTravel: 0 };
-      try {
-        const semesterSnap = await getDoc(semesterRef);
-        if (semesterSnap.exists()) {
-          const data = semesterSnap.data();
-          semesterStats = {
-            present: data.present || 0,
-            late: data.late || 0,
-            leave: data.leave || 0,
-            absent: data.absent || 0,
-            noCheckout: data.noCheckout || 0,
-            officialTravel: data.officialTravel || 0,
-          };
-        } else {
-          semesterStats = user.attendanceStats || semesterStats;
-        }
-      } catch (err) {
-        console.error("[LINE] Error fetching teacher semester stats:", err);
-      }
+      const semesterStats = await fetchTeacherSemesterStats(user);
 
       await sendTeacherLineAttendanceNotification(
         { ...user, attendanceStats: semesterStats },
@@ -1775,7 +1773,7 @@ const CheckinOutPage: React.FC = () => {
     } catch (error) {
       console.error("[LINE] Teacher notification error:", error);
     }
-  }, [schoolId, currentAcademicYear, schoolSettings]);
+  }, [schoolId, currentAcademicYear, schoolSettings, fetchTeacherSemesterStats]);
 
   const updateAttendance = useCallback(async (
     type: "checkin" | "checkout" | "checkin_and_checkout",
@@ -2092,9 +2090,15 @@ const CheckinOutPage: React.FC = () => {
     } else if (user.type === "teacher") {
       console.log(`[LINE] Triggering ${type} notification for teacher`, user.displayId, user.name, "status:", status);
       await sendTeacherLineNotification(user, status, timeStr, type);
-      await notifyTeacherAttendanceInStaffChat(schoolId, user, status, timeStr, type);
+      await notifyTeacherAttendanceInStaffChat(
+        schoolId,
+        { ...user, attendanceStats: await fetchTeacherSemesterStats(user) },
+        status,
+        timeStr,
+        type
+      );
     }
-  }, [schoolId, timeOffset, studentLateTime, teacherLateTime, studentCheckoutTime, teacherCheckoutTime, schoolSettings, currentAcademicYear, sendLineNotification, sendTeacherLineNotification, lockSelfCheckinDevice]);
+  }, [schoolId, timeOffset, studentLateTime, teacherLateTime, studentCheckoutTime, teacherCheckoutTime, schoolSettings, currentAcademicYear, sendLineNotification, sendTeacherLineNotification, fetchTeacherSemesterStats, lockSelfCheckinDevice]);
 
   const resolveFaceMatchedUser = useCallback(async (payload: any): Promise<FoundUser | null> => {
     if (!schoolId) return null;
