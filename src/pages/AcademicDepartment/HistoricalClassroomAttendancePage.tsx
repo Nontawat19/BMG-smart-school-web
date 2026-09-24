@@ -732,13 +732,20 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                     const matchesRoom = matchesRoomGroup(data, selectedRoomNumber);
 
                     if (matchesClass && matchesRoom) {
-                        const dateObj = data.date?.toDate();
-                        if (dateObj) {
-                            const y = dateObj.getFullYear();
-                            const m = String(dateObj.getMonth() + 1).padStart(2, '0');
-                            const d = String(dateObj.getDate()).padStart(2, '0');
-                            const isoStr = `${y}-${m}-${d}`;
+                        let isoStr = '';
+                        const idMatch = doc.id.match(/^(\d{2})-(\d{2})-(\d{4})/);
+                        if (idMatch) {
+                            isoStr = `${idMatch[3]}-${idMatch[2]}-${idMatch[1]}`;
+                        } else if (data.date?.toDate) {
+                            const dateObj = data.date.toDate();
+                            const bangkokTime = new Date(dateObj.getTime() + 7 * 3600 * 1000);
+                            const y = bangkokTime.getUTCFullYear();
+                            const m = String(bangkokTime.getUTCMonth() + 1).padStart(2, '0');
+                            const d = String(bangkokTime.getUTCDate()).padStart(2, '0');
+                            isoStr = `${y}-${m}-${d}`;
+                        }
 
+                        if (isoStr) {
                             const classLabel = CLASSES[selectedClass] || selectedClass;
                             const isPrimary = classLabel.includes('ป.') || selectedClass.toLowerCase().startsWith('p');
                             const termKeys: ('term1' | 'term2')[] = isPrimary ? ['term1', 'term2'] : [semester === '1' ? 'term1' : 'term2'];
@@ -1566,12 +1573,22 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 if (!matchesClass || !matchesRoom) return;
 
                 let dateStrDisplay = '';
-                if (docDate) {
-                    if (docDate.getMonth() === selectedMonth && docDate.getFullYear() === yearAD) {
-                        const day = String(docDate.getDate()).padStart(2, '0');
-                        const month = String(docDate.getMonth() + 1).padStart(2, '0');
-                        const year = docDate.getFullYear();
-                        dateStrDisplay = `${day}-${month}-${year}`;
+                const idMatch = doc.id.match(/^(\d{2})-(\d{2})-(\d{4})/);
+                if (idMatch) {
+                    const dNum = parseInt(idMatch[1], 10);
+                    const mNum = parseInt(idMatch[2], 10);
+                    const yNum = parseInt(idMatch[3], 10);
+                    if (mNum - 1 === selectedMonth && yNum === yearAD) {
+                        dateStrDisplay = `${idMatch[1]}-${idMatch[2]}-${idMatch[3]}`;
+                    }
+                } else if (docDate) {
+                    // Fallback to Bangkok timezone (UTC+7)
+                    const bangkokTime = new Date(docDate.getTime() + 7 * 3600 * 1000);
+                    const dNum = bangkokTime.getUTCDate();
+                    const mNum = bangkokTime.getUTCMonth();
+                    const yNum = bangkokTime.getUTCFullYear();
+                    if (mNum === selectedMonth && yNum === yearAD) {
+                        dateStrDisplay = `${String(dNum).padStart(2, '0')}-${String(mNum + 1).padStart(2, '0')}-${yNum}`;
                     }
                 }
 
@@ -2143,7 +2160,8 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 } else {
                     const datePart = dateStr.split('_')[0];
                     const [d, m, y] = datePart.split('-').map(Number);
-                    const dateObj = new Date(y, m - 1, d, 12, 0, 0);
+                    // Anchor at 12:00:00 Bangkok time (UTC+7) = 05:00:00 UTC
+                    const dateObj = new Date(Date.UTC(y, m - 1, d, 5, 0, 0));
                     const recordISODate = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
                     const recordSemester = isPrimaryAnnualMode
                         ? getSemesterForISODate(recordISODate, terms, semester)

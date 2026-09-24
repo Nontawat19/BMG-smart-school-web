@@ -14,6 +14,7 @@ export interface ClassroomAttendanceRecord {
     semester?: string;
     academicYear?: string;
     courseId?: string;
+    id?: string;
 }
 
 export interface Student {

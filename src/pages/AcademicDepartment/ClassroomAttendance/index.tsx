@@ -1550,9 +1550,11 @@ const ClassroomAttendancePage: React.FC = () => {
                 : currentDate;
 
             const year = effectiveDate.getFullYear();
-            const dateStr = `${String(effectiveDate.getDate()).padStart(2, '0')}-${String(effectiveDate.getMonth() + 1).padStart(2, '0')}-${year}`;
-            // Match Historical Attendance Page: 12:00:00 for the date
-            const normalizedDateObj = new Date(year, effectiveDate.getMonth(), effectiveDate.getDate(), 12, 0, 0);
+            const month = effectiveDate.getMonth();
+            const date = effectiveDate.getDate();
+            const dateStr = `${String(date).padStart(2, '0')}-${String(month + 1).padStart(2, '0')}-${year}`;
+            // Match Historical Attendance Page: 12:00:00 Bangkok time (UTC+7) = 05:00:00 UTC
+            const normalizedDateObj = new Date(Date.UTC(year, month, date, 5, 0, 0));
 
             // Generate stable subject code and class key
             const stableSubjectCode = selectedClass.subjectCode || selectedClass.courseId || (selectedClass.isSubstitute ? (selectedClass.substitutionId || selectedClass.id) : '');

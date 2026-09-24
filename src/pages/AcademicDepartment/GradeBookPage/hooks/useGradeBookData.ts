@@ -181,8 +181,15 @@ const processAttendanceRecords = (
         const targetStudentId = idToStudentDocId[rec.studentId];
         if (!targetStudentId) return;
 
-        const d = typeof (rec.date as any)?.toDate === 'function' ? (rec.date as any).toDate() : new Date(rec.date as any);
-        const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        let dateStr = '';
+        const idMatch = (rec as any).id?.match?.(/^(\d{2})-(\d{2})-(\d{4})/);
+        if (idMatch) {
+            dateStr = `${idMatch[3]}-${idMatch[2]}-${idMatch[1]}`;
+        } else {
+            const d = typeof (rec.date as any)?.toDate === 'function' ? (rec.date as any).toDate() : new Date(rec.date as any);
+            const bangkokTime = new Date(d.getTime() + 7 * 3600 * 1000);
+            dateStr = `${bangkokTime.getUTCFullYear()}-${String(bangkokTime.getUTCMonth() + 1).padStart(2, '0')}-${String(bangkokTime.getUTCDate()).padStart(2, '0')}`;
+        }
         const status = rec.status;
 
         const current = newDailyStatus[targetStudentId][dateStr];
@@ -509,7 +516,7 @@ export const useGradeBookData = (
 
             const attendanceRecords: ClassroomAttendanceRecord[] = [];
             snap.forEach(docSnap => {
-                attendanceRecords.push(docSnap.data() as ClassroomAttendanceRecord);
+                attendanceRecords.push({ ...(docSnap.data() as ClassroomAttendanceRecord), id: docSnap.id });
             });
             lastAttendanceRecordsRef.current = attendanceRecords;
 

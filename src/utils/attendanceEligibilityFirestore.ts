@@ -169,8 +169,18 @@ export const fetchCourseAttendanceHistory = async (
         const rec = recordDoc.data() as any;
         const studentId = rec.studentId;
         const dateVal = rec.date?.toDate ? rec.date.toDate() : null;
-        if (!studentId || !dateVal) return;
-        const dateStr = toDateKey(dateVal);
+        if (!studentId) return;
+
+        let dateStr = '';
+        const idMatch = recordDoc.id.match(/^(\d{2})-(\d{2})-(\d{4})/);
+        if (idMatch) {
+            dateStr = `${idMatch[3]}-${idMatch[2]}-${idMatch[1]}`;
+        } else if (dateVal) {
+            const bangkokTime = new Date(dateVal.getTime() + 7 * 3600 * 1000);
+            dateStr = `${bangkokTime.getUTCFullYear()}-${String(bangkokTime.getUTCMonth() + 1).padStart(2, '0')}-${String(bangkokTime.getUTCDate()).padStart(2, '0')}`;
+        } else {
+            return;
+        }
         const status = rec.status as AttendanceStatus;
         if (!dailyStatus[studentId]) dailyStatus[studentId] = {};
         const current = dailyStatus[studentId][dateStr];
