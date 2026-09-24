@@ -158,6 +158,45 @@ exports.sendLineMulticast = functions.region("us-central1").https.onCall(async (
 
 // ─── Web Push Notification ───────────────────────────────────────────────────
 // ถูกเรียกจากฝั่ง Client ผ่าน httpsCallable ทันทีที่มีการบันทึก notification ลง Firestore
+// ── Expo Push (แอปมือถือเก็บ token แบบ ExponentPushToken[...] ไม่ใช่ FCM token) ──────────────────
+// token ชนิดนี้ส่งผ่าน FCM ไม่ได้ (FCM จะตอบว่าไม่ถูกต้อง แล้วโค้ดด้านล่างจะลบ token ทิ้ง) จึงต้องแยกส่ง
+// ผ่าน Expo Push API แทน tokenDocs = [{ token, ref }] คืน { sent, invalidRefs }
+const isExpoPushToken = (token) => /^Expo(nent)?PushToken\[.+\]$/.test(String(token || ""));
+
+async function sendExpoPush(tokenDocs, { title, body, data }) {
+    const invalidRefs = [];
+    let sent = 0;
+    // Expo Push API รับได้สูงสุด 100 ข้อความต่อคำขอ
+    for (let i = 0; i < tokenDocs.length; i += 100) {
+        const chunk = tokenDocs.slice(i, i + 100);
+        try {
+            const res = await fetch("https://exp.host/--/api/v2/push/send", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Accept: "application/json" },
+                body: JSON.stringify(chunk.map((t) => ({
+                    to: t.token,
+                    title,
+                    body,
+                    data,
+                    sound: "default",
+                    priority: "high",
+                }))),
+            });
+            const json = await res.json();
+            const tickets = Array.isArray(json?.data) ? json.data : [];
+            tickets.forEach((ticket, idx) => {
+                if (ticket?.status === "ok") sent += 1;
+                else if (ticket?.details?.error === "DeviceNotRegistered") invalidRefs.push(chunk[idx].ref);
+            });
+            if (!res.ok) console.error("[ExpoPush] HTTP", res.status, JSON.stringify(json).slice(0, 300));
+        } catch (err) {
+            console.error("[ExpoPush] ส่งล้มเหลว:", err);
+        }
+    }
+    return { sent, invalidRefs };
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 exports.processPushNotification = functions.region("us-central1").https.onCall(async (data, context) => {
     // data = { userId, message, link, source, schoolId, notificationId }
     const { userId, message, link, source, schoolId, notificationId } = data;
@@ -171,11 +210,12 @@ exports.processPushNotification = functions.region("us-central1").https.onCall(a
       .collection("fcm_tokens")
       .get();
 
-    const tokens = tokensSnap.docs
-      .map((d) => d.data().token)
-      .filter(Boolean);
+    const allTokenDocs = tokensSnap.docs.filter((d) => d.data().token);
+    const fcmTokenDocs = allTokenDocs.filter((d) => !isExpoPushToken(d.data().token));
+    const expoTokenDocs = allTokenDocs.filter((d) => isExpoPushToken(d.data().token));
+    const tokens = fcmTokenDocs.map((d) => d.data().token);
 
-    if (tokens.length === 0) {
+    if (allTokenDocs.length === 0) {
       console.log(`[Push] ไม่พบ FCM token สำหรับ userId=${userId}`);
       return { success: false, error: "No tokens found" };
     }
@@ -236,13 +276,35 @@ exports.processPushNotification = functions.region("us-central1").https.onCall(a
     };
 
     try {
-      const response = await admin.messaging().sendEachForMulticast(fcmPayload);
+      // แอปมือถือ (Expo token) ส่งผ่าน Expo Push API
+      let expoSent = 0;
+      const invalidTokenDocs = [];
+      if (expoTokenDocs.length > 0) {
+        const expoResult = await sendExpoPush(
+          expoTokenDocs.map((d) => ({ token: d.data().token, ref: d.ref })),
+          {
+            title: notificationTitle,
+            body: message,
+            data: {
+              link: absoluteLink,
+              notificationId: String(notificationId || ""),
+              schoolId: String(schoolId || ""),
+              source: String(source || ""),
+            },
+          }
+        );
+        expoSent = expoResult.sent;
+        expoResult.invalidRefs.forEach((ref) => invalidTokenDocs.push({ ref }));
+      }
+
+      const response = tokens.length > 0
+        ? await admin.messaging().sendEachForMulticast(fcmPayload)
+        : { successCount: 0, responses: [] };
       console.log(
-        `[Push] ส่งสำเร็จ ${response.successCount}/${tokens.length} เครื่อง`
+        `[Push] ส่งสำเร็จ FCM ${response.successCount}/${tokens.length} เครื่อง, Expo ${expoSent}/${expoTokenDocs.length} เครื่อง`
       );
 
       // 5. ลบ token ที่ไม่ valid ออกจาก Firestore
-      const invalidTokenDocs = [];
       response.responses.forEach((r, i) => {
         if (!r.success) {
           const code = r.error?.code;
@@ -250,7 +312,7 @@ exports.processPushNotification = functions.region("us-central1").https.onCall(a
             code === "messaging/invalid-registration-token" ||
             code === "messaging/registration-token-not-registered"
           ) {
-            invalidTokenDocs.push(tokensSnap.docs[i]);
+            invalidTokenDocs.push(fcmTokenDocs[i]);
           }
         }
       });
@@ -262,7 +324,7 @@ exports.processPushNotification = functions.region("us-central1").https.onCall(a
         console.log(`[Push] ลบ token หมดอายุ ${invalidTokenDocs.length} รายการ`);
       }
 
-      return { success: true, sent: response.successCount };
+      return { success: true, sent: response.successCount + expoSent };
     } catch (err) {
       console.error("[Push] ส่ง FCM ล้มเหลว:", err);
       return { success: false, error: err.message };
@@ -301,12 +363,15 @@ exports.notifyStaffAttendanceChat = functions.region("us-central1").https.onCall
     const tokenSnaps = await Promise.all(
         uids.map((uid) => db.collection("users").doc(uid).collection("fcm_tokens").get())
     );
-    const tokenRefs = [];
+    const allTokenRefs = [];
     tokenSnaps.forEach((ts) => ts.docs.forEach((d) => {
         const token = d.data().token;
-        if (token) tokenRefs.push({ token, ref: d.ref });
+        if (token) allTokenRefs.push({ token, ref: d.ref });
     }));
-    if (tokenRefs.length === 0) return { success: false, error: "No tokens found" };
+    if (allTokenRefs.length === 0) return { success: false, error: "No tokens found" };
+    // แยก token แอปมือถือ (Expo) ออกจาก FCM — Expo token ส่งผ่าน FCM ไม่ได้และจะถูกลบทิ้งโดยไม่ตั้งใจ
+    const tokenRefs = allTokenRefs.filter((t) => !isExpoPushToken(t.token));
+    const expoTokenRefs = allTokenRefs.filter((t) => isExpoPushToken(t.token));
 
     const appOrigin = "https://bmg-smartschool.web.app";
     const title = "แจ้งเตือนการลงเวลา มา-กลับ";
@@ -361,12 +426,28 @@ exports.notifyStaffAttendanceChat = functions.region("us-central1").https.onCall
         });
     }
 
+    if (expoTokenRefs.length > 0) {
+        const expoResult = await sendExpoPush(expoTokenRefs, {
+            title,
+            body: text,
+            data: {
+                link: `${appOrigin}/chat/staff-attendance-log`,
+                roomId: "staff-attendance-log",
+                schoolId: String(schoolId),
+                messageId: String(messageId),
+                source: "staff-attendance",
+            },
+        });
+        sent += expoResult.sent;
+        invalidRefs.push(...expoResult.invalidRefs);
+    }
+
     if (invalidRefs.length > 0) {
         const batch = db.batch();
         invalidRefs.forEach((ref) => batch.delete(ref));
         await batch.commit();
     }
-    console.log(`[StaffAttendancePush] school=${schoolId} ส่งสำเร็จ ${sent}/${tokenRefs.length} เครื่อง ลบ token หมดอายุ ${invalidRefs.length}`);
+    console.log(`[StaffAttendancePush] school=${schoolId} ส่งสำเร็จ ${sent}/${allTokenRefs.length} เครื่อง (FCM ${tokenRefs.length}, Expo ${expoTokenRefs.length}) ลบ token หมดอายุ ${invalidRefs.length}`);
     return { success: true, sent };
 });
 
