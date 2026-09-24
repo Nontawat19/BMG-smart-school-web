@@ -318,6 +318,25 @@ exports.notifyStaffAttendanceChat = functions.region("us-central1").https.onCall
         const chunk = tokenRefs.slice(i, i + 500);
         const response = await admin.messaging().sendEachForMulticast({
             tokens: chunk.map((t) => t.token),
+            // notification + android + apns: ให้แอปมือถือ (Android/iOS) ขึ้นแจ้งเตือนได้ด้วย
+            // ส่วน webpush ยังเป็นของเดิมสำหรับเว็บ/PWA
+            notification: { title, body: text },
+            data: {
+                link: `${appOrigin}/chat/staff-attendance-log`,
+                roomId: "staff-attendance-log",
+                schoolId: String(schoolId),
+                messageId: String(messageId),
+                source: "staff-attendance",
+            },
+            android: {
+                priority: "high",
+                collapseKey: "staff-attendance",
+                notification: { tag: `bmg-staff-attendance-${messageId}`, sound: "default" },
+            },
+            apns: {
+                headers: { "apns-priority": "10" },
+                payload: { aps: { sound: "default", "thread-id": "staff-attendance" } },
+            },
             webpush: {
                 notification: {
                     title,
