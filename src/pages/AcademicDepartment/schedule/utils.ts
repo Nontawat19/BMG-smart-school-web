@@ -1,5 +1,6 @@
 import { CourseInstance, PeriodSetting, SpecialPeriod, Teacher, Schedule, Course, AssignmentConstraint, AssignmentConstraintMap } from './types';
 import { CLASSES } from '@/utils/schoolUtils';
+import { specialPeriodMatchesDay } from '@/utils/specialPeriodDay';
 
 export { CLASSES };
 
@@ -290,7 +291,7 @@ export const getMatchingSpecialPeriod = (
     const periodEnd = normalizeScheduleTime(periodSetting.endTime);
 
     return specialPeriods.find(sp => {
-        const dayMatches = !sp.day || sp.day === 'all' || sp.day === dayKey;
+        const dayMatches = specialPeriodMatchesDay(sp.day, dayKey);
         if (!dayMatches) return false;
         if (sp.linkedPeriodId && sp.linkedPeriodId !== 'custom') {
             return sp.linkedPeriodId === periodSetting.id;

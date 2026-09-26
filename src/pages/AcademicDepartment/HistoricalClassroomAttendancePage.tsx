@@ -241,7 +241,7 @@ const selectStyles = {
 
 // Helper to check if a record matches the selected room/group precisely (consistent across modules)
 const matchesRoomGroup = (data: any, selectedRoom: string): boolean => {
-    if (!selectedRoom) return true;
+    if (!selectedRoom) return false;
     const normalizedSelected = normalizeRoom(selectedRoom);
     // A record's own room/roomNumber/roomIds fields — always populated on modern attendance
     // records (see ClassroomAttendance/index.tsx's save payload: room/roomIds are set from
@@ -549,6 +549,8 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
     const [activeStatus, setActiveStatus] = useState<string | null>(null);
     const [isMonthPickerOpen, setIsMonthPickerOpen] = useState(false);
     const [annualRecordedDays, setAnnualRecordedDays] = useState<number>(0);
+    const [annualRecordedPeriods, setAnnualRecordedPeriods] = useState<number>(0);
+    const [annualRecordedSlotsByMonth, setAnnualRecordedSlotsByMonth] = useState<Record<number, Set<string>>>({});
 
     const isPrimaryAnnualMode = useMemo(() => isPrimaryClassValue(selectedClass), [selectedClass]);
 
@@ -699,8 +701,10 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
     useEffect(() => {
         const fetchAnnualAttendanceCount = async () => {
-            if (!schoolId || !selectedClass || !selectedCourse) {
+            if (!schoolId || !selectedClass || !selectedCourse || !selectedRoomNumber) {
                 setAnnualRecordedDays(0);
+                setAnnualRecordedPeriods(0);
+                setAnnualRecordedSlotsByMonth({});
                 return;
             }
             try {
@@ -723,6 +727,8 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 const q = query(attendanceRef, ...constraints);
                 const snap = await getDocs(q);
                 const uniqueDates = new Set<string>();
+                const uniquePeriods = new Set<string>();
+                const recordedSlotsByMonth: Record<number, Set<string>> = {};
 
                 snap.forEach(doc => {
                     const data = doc.data();
@@ -755,19 +761,44 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                 return termData?.startDate && termData?.endDate && isoStr >= termData.startDate && isoStr <= termData.endDate;
                             });
 
-                            if (isWithinTargetTerms) uniqueDates.add(isoStr);
+                            if (isWithinTargetTerms) {
+                                uniqueDates.add(isoStr);
+                                let periodNum = data.period !== undefined ? Number(data.period) : 0;
+                                if (!periodNum) {
+                                    const pMatch = doc.id.match(/_P(\d+)/i);
+                                    if (pMatch) {
+                                        periodNum = parseInt(pMatch[1], 10);
+                                    }
+                                }
+                                const periodKey = periodNum > 0 ? `${isoStr}_P${periodNum}` : `${isoStr}_P0`;
+                                uniquePeriods.add(periodKey);
+
+                                // Group into month
+                                const parts = isoStr.split('-');
+                                if (parts.length === 3) {
+                                    const mIdx = parseInt(parts[1], 10) - 1;
+                                    if (!recordedSlotsByMonth[mIdx]) {
+                                        recordedSlotsByMonth[mIdx] = new Set<string>();
+                                    }
+                                    const dStr = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                                    const pVal = periodNum > 0 ? periodNum : 0;
+                                    recordedSlotsByMonth[mIdx].add(`${dStr}_P${pVal}`);
+                                    recordedSlotsByMonth[mIdx].add(dStr);
+                                    recordedSlotsByMonth[mIdx].add(`${isoStr}_P${pVal}`);
+                                    recordedSlotsByMonth[mIdx].add(isoStr);
+                                }
+                            }
                         }
                     }
                 });
 
                 // Calculate stats for warning
                 const totalDays = uniqueDates.size;
-                const classLabel = CLASSES[selectedClass] || selectedClass;
-                const isPrimary = classLabel.includes('ป.') || selectedClass.toLowerCase().startsWith('p');
-                const courseAny = currentCourse as any;
-                const credits = courseAny?.credits ? Number(courseAny.credits) : 1;
+                const totalPeriods = Math.max(uniquePeriods.size, totalDays);
 
                 setAnnualRecordedDays(totalDays);
+                setAnnualRecordedPeriods(totalPeriods);
+                setAnnualRecordedSlotsByMonth(recordedSlotsByMonth);
             } catch (error) {
                 console.error("Error fetching annual attendance count:", error);
             }
@@ -1018,7 +1049,8 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                 if (!matchesGrade) return false;
                             }
 
-                            if (!selectedRoomNumber || selectedRoomNumber === 'all') return true;
+                            if (!selectedRoomNumber) return false;
+                            if (selectedRoomNumber === 'all') return true;
 
                             // Room matching for this slot:
                             // Check if this schedule slot or its specific group explicitly specifies room(s)
@@ -1136,17 +1168,23 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             let reason: DateReason | undefined = undefined;
             const description = event?.description;
 
-            // 1. Determine Day Type & Checkability
+            // 1. Determine Day Type & Checkability (ข้ามวันหยุดราชการ วันหยุดชดเชย วันหยุดกรณีพิเศษ)
             if (event?.type === 'schoolDay') {
                 isCheckable = true;
                 reason = 'schoolDay';
             } else if (event?.type === 'holiday' || event?.type === 'specialHoliday') {
-                const desc = event.description || 'วันหยุด';
-                if (isNonOfficialHoliday(desc)) {
-                    isCheckable = true;
-                } else {
+                const desc = (event.description || '').toLowerCase();
+                const isExplicitHoliday = event.type === 'specialHoliday' ||
+                    desc.includes('ชดเชย') ||
+                    desc.includes('กรณีพิเศษ') ||
+                    desc.includes('วันหยุด') ||
+                    !isNonOfficialHoliday(desc);
+
+                if (isExplicitHoliday) {
                     isCheckable = false;
                     reason = event.type === 'holiday' ? 'holiday' : 'special_holiday';
+                } else {
+                    isCheckable = true;
                 }
             } else if (isWeekend) {
                 isCheckable = false;
@@ -1312,8 +1350,13 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
         });
     }, [courses, selectedClass, selectedRoomNumber, isAcademicManager, currentTeacher, courseAssignmentsMap]);
 
-    // Auto-select course if only one option available
+    // Auto-select course if only one option available (only when room is selected)
     useEffect(() => {
+        if (!selectedRoomNumber) {
+            setSelectedCourse('');
+            return;
+        }
+
         if (selectedCourse && filteredCourses.length > 0 && !filteredCourses.some(c => c.id === selectedCourse || c.code === selectedCourse)) {
             setSelectedCourse('');
             return;
@@ -1322,11 +1365,97 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
         if (!selectedCourse && filteredCourses.length === 1) {
             setSelectedCourse(filteredCourses[0].id || filteredCourses[0].code);
         }
-    }, [filteredCourses, selectedCourse]);
+    }, [filteredCourses, selectedCourse, selectedRoomNumber]);
 
-    // Fetch Data
+    // Calculate attendance check status per month for Month Picker (นับแยกรายห้อง)
+    const monthAttendanceStatus = useMemo(() => {
+        if (!selectedCourse || !selectedRoomNumber) return {};
+
+        const statusMap: Record<number, {
+            isComplete: boolean;
+            scheduledPeriods: number;
+            recordedPeriods: number;
+            missingPeriods: number;
+            hasScheduled: boolean;
+        }> = {};
+
+        allowedMonths.forEach(mIdx => {
+            const { dates: mDates, metadata: mMeta } = generateDates(academicYear, mIdx);
+
+            let scheduledCount = 0;
+            const scheduledSlots: string[] = [];
+
+            mDates.forEach(dStr => {
+                const meta = mMeta[dStr];
+                if (meta && meta.isRelevant && meta.isCheckable) {
+                    const periods = (meta.periods && meta.periods.length > 0)
+                        ? meta.periods.filter(p => p > 0)
+                        : [0];
+
+                    if (periods.length === 0) {
+                        scheduledSlots.push(`${dStr}_P0`);
+                        scheduledCount += 1;
+                    } else {
+                        periods.forEach(p => {
+                            scheduledSlots.push(`${dStr}_P${p}`);
+                            scheduledCount += 1;
+                        });
+                    }
+                }
+            });
+
+            const recordedSet = new Set<string>(annualRecordedSlotsByMonth[mIdx] || []);
+
+            // If this is currently active month, merge live table data
+            if (mIdx === selectedMonth && students.length > 0) {
+                scheduledSlots.forEach(slot => {
+                    const hasLive = students.some(st => {
+                        const status = attendanceData[st.id]?.[slot] || attendanceData[st.id]?.[slot.split('_')[0]];
+                        return Boolean(status);
+                    });
+                    if (hasLive) {
+                        recordedSet.add(slot);
+                        recordedSet.add(slot.split('_')[0]);
+                    }
+                });
+            }
+
+            let recordedCount = 0;
+            if (scheduledCount > 0) {
+                scheduledSlots.forEach(slot => {
+                    const dateOnly = slot.split('_')[0];
+                    if (recordedSet.has(slot) || recordedSet.has(dateOnly)) {
+                        recordedCount++;
+                    }
+                });
+            } else {
+                recordedCount = Array.from(recordedSet).filter(s => s.includes('_P')).length || recordedSet.size;
+            }
+
+            const hasScheduled = scheduledCount > 0;
+            const isComplete = hasScheduled ? (recordedCount >= scheduledCount) : true;
+            const missingPeriods = Math.max(0, scheduledCount - recordedCount);
+
+            statusMap[mIdx] = {
+                isComplete,
+                scheduledPeriods: scheduledCount,
+                recordedPeriods: recordedCount,
+                missingPeriods,
+                hasScheduled
+            };
+        });
+
+        return statusMap;
+    }, [allowedMonths, generateDates, academicYear, annualRecordedSlotsByMonth, selectedMonth, selectedCourse, students, attendanceData]);
+
+    // Fetch Data (ต้องเลือกห้องก่อนเสมอ ถ้าไม่เลือกจะไม่ทำการตรวจสอบหรือโหลดข้อมูล)
     const handleFetchData = React.useCallback(async () => {
-        if (!schoolId || !selectedClass || !selectedCourse || !academicYear || !semester || courses.length === 0) {
+        if (!schoolId || !selectedClass || !selectedRoomNumber || !selectedCourse || !academicYear || !semester || courses.length === 0) {
+            setStudents([]);
+            setAttendanceData({});
+            setDates([]);
+            setDateMetadata({});
+            setLoading(false);
             return;
         }
 
@@ -1759,9 +1888,13 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
         setDateMetadata(finalMetadata);
     }, [courseSchedule, generateDates, academicYear, selectedMonth, students.length]);
 
-    // Auto-Fetch Effect: triggers ONLY when core user selection parameters change and courses are loaded
+    // Auto-Fetch Effect: triggers ONLY when core user selection parameters change (ต้องมี selectedRoomNumber ก่อนเสมอ)
     useEffect(() => {
-        if (!schoolId || !selectedClass || !selectedCourse || !academicYear || !semester || courses.length === 0) {
+        if (!schoolId || !selectedClass || !selectedRoomNumber || !selectedCourse || !academicYear || !semester || courses.length === 0) {
+            setStudents([]);
+            setAttendanceData({});
+            setDates([]);
+            setDateMetadata({});
             return;
         }
 
@@ -2702,41 +2835,95 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
                         {/* Attendance Warning Logic Based on Level */}
                         {(() => {
-                            const classLabel = CLASSES[selectedClass] || selectedClass;
-                            const isPrimary = classLabel.includes('ป.') || selectedClass.toLowerCase().startsWith('p');
-                            const credits = filteredCourses.find(c => c.code === selectedCourse || c.id === selectedCourse)?.credits;
-                            const hoursPerWeek = filteredCourses.find(c => c.code === selectedCourse || c.id === selectedCourse)?.hoursPerWeek || (Number(credits) * 2);
+                            if (!selectedRoomNumber || !selectedCourse) {
+                                return (
+                                    <div className="bg-gray-50/50 dark:bg-gray-800/20 border border-dashed border-gray-200 dark:border-gray-700/50 rounded-xl p-3 flex items-center gap-4 text-gray-400">
+                                        <div className="p-2 bg-gray-500/5 rounded-lg">
+                                            <Search size={20} className="shrink-0 opacity-30" />
+                                        </div>
+                                        <p className="text-[10px] font-medium italic">เลือกวิชาเพื่อดูสรุปสถิติจำนวนคาบ</p>
+                                    </div>
+                                );
+                            }
 
-                            // Semester threshold for Secondary, Annual for Primary
-                            const threshold = isPrimary ? 200 : (Number(credits) >= 1 ? 80 : 40);
+                            const isPrimary = isPrimaryAnnualMode;
+                            const currentCourseObj = filteredCourses.find(c => c.code === selectedCourse || c.id === selectedCourse);
+                            const creditsNum = Number(currentCourseObj?.credits || 0);
+                            const hoursPerWeek = Number(currentCourseObj?.hoursPerWeek) || (creditsNum > 0 ? Math.round(creditsNum * 2) : 0);
+
+                            // Total teaching periods for course:
+                            // Secondary: 20 weeks per semester -> hoursPerWeek * 20 (or credits * 40)
+                            // Primary: 40 weeks per school year -> hoursPerWeek * 40 (or credits * 40)
+                            const totalTargetHours = Number(currentCourseObj?.totalHours || currentCourseObj?.totalPeriods) ||
+                                (isPrimary
+                                    ? (hoursPerWeek > 0 ? hoursPerWeek * 40 : (creditsNum > 0 ? Math.round(creditsNum * 40) : 0))
+                                    : (hoursPerWeek > 0 ? hoursPerWeek * 20 : (creditsNum > 0 ? Math.round(creditsNum * 40) : 0))
+                                );
+
+                            const recordedCount = annualRecordedPeriods > 0 ? annualRecordedPeriods : annualRecordedDays;
+                            const remainingHours = totalTargetHours > 0 ? Math.max(0, totalTargetHours - recordedCount) : 0;
+                            const isOverTarget = totalTargetHours > 0 && recordedCount > totalTargetHours;
                             const limitLabel = isPrimary ? 'ปีการศึกษา' : 'ภาคเรียน';
 
-                            if (annualRecordedDays > threshold) {
+                            if (isOverTarget) {
                                 return (
                                     <div className="bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/20 rounded-xl p-3 flex items-center gap-4 text-orange-700 dark:text-orange-400 animate-pulse-slow">
                                         <div className="p-2 bg-orange-500/10 rounded-lg">
                                             <AlertTriangle size={20} className="shrink-0" />
                                         </div>
                                         <div className="flex-1">
-                                            <p className="text-[11px] font-black uppercase tracking-wider leading-none mb-1">แจ้งเตือน: จำนวนวันเกินกำหนด</p>
+                                            <p className="text-[11px] font-black uppercase tracking-wider leading-none mb-1">แจ้งเตือน: จำนวนคาบเกินกำหนด</p>
                                             <p className="text-[10px] mt-1 font-medium italic">
-                                                วิชานี้บันทึกไปแล้วรวม <span className="font-black text-xs underline decoration-2">{annualRecordedDays}</span> วัน (เกินเกณฑ์ปกติต่อ{limitLabel})
+                                                วิชานี้บันทึกไปแล้วรวม <span className="font-black text-xs underline decoration-2">{recordedCount}{totalTargetHours > 0 ? `/${totalTargetHours}` : ''}</span> คาบ (เกินเกณฑ์ปกติ {recordedCount - totalTargetHours} คาบ ต่อ{limitLabel})
                                                 {hoursPerWeek > 0 && <span className="ml-1 opacity-70">| ตารางสอน {hoursPerWeek} คาบ/สัปดาห์</span>}
                                             </p>
                                         </div>
                                     </div>
                                 );
-                            } else if (selectedCourse && annualRecordedDays > 0) {
+                            } else if (selectedCourse && recordedCount > 0) {
                                 return (
                                     <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-xl p-3 flex items-center gap-4 text-emerald-700 dark:text-emerald-400 shadow-sm">
                                         <div className="p-2 bg-emerald-500/10 rounded-lg">
                                             <CheckCircle size={20} className="shrink-0" />
                                         </div>
                                         <div className="flex-1">
-                                            <p className="text-[11px] font-black uppercase tracking-wider leading-none mb-1">สถิติจำนวนวันเช็คชื่อ</p>
-                                            <p className="text-[10px] mt-1 font-medium">
-                                                บันทึกข้อมูลแล้วทั้งหมด <span className="font-black">{annualRecordedDays}</span> วัน (นับตาม{limitLabel})
-                                                {hoursPerWeek > 0 && <span className="ml-1 opacity-70 font-bold">| {hoursPerWeek} คาบต่อสัปดาห์</span>}
+                                            <p className="text-[11px] font-black uppercase tracking-wider leading-none mb-1">สถิติจำนวนคาบเช็คชื่อ</p>
+                                            <p className="text-[10px] mt-1 font-medium flex flex-wrap items-center gap-1.5">
+                                                <span>
+                                                    บันทึกข้อมูลแล้วทั้งหมด <span className="font-black text-xs text-emerald-800 dark:text-emerald-300">{recordedCount}{totalTargetHours > 0 ? `/${totalTargetHours}` : ''}</span> คาบ (นับตาม{limitLabel})
+                                                </span>
+                                                {totalTargetHours > 0 && (
+                                                    remainingHours > 0 ? (
+                                                        <span className="inline-flex items-center font-bold text-amber-700 dark:text-amber-300 bg-amber-100/90 dark:bg-amber-900/40 px-2 py-0.5 rounded-full text-[10px]">
+                                                            (ต้องเช็คอีก {remainingHours} คาบ)
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100/90 dark:bg-emerald-900/40 px-2 py-0.5 rounded-full text-[10px]">
+                                                            (ครบตามเวลาเรียนแล้ว)
+                                                        </span>
+                                                    )
+                                                )}
+                                                {hoursPerWeek > 0 && <span className="opacity-70 font-bold">| {hoursPerWeek} คาบต่อสัปดาห์</span>}
+                                            </p>
+                                        </div>
+                                    </div>
+                                );
+                            } else if (selectedCourse) {
+                                return (
+                                    <div className="bg-blue-50/50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-xl p-3 flex items-center gap-4 text-blue-700 dark:text-blue-400">
+                                        <div className="p-2 bg-blue-500/10 rounded-lg">
+                                            <CheckCircle size={20} className="shrink-0 opacity-70" />
+                                        </div>
+                                        <div className="flex-1">
+                                            <p className="text-[11px] font-black uppercase tracking-wider leading-none mb-1">สถิติจำนวนคาบเช็คชื่อ</p>
+                                            <p className="text-[10px] mt-1 font-medium flex flex-wrap items-center gap-1.5">
+                                                <span>บันทึกข้อมูลแล้ว <span className="font-black text-xs">0{totalTargetHours > 0 ? `/${totalTargetHours}` : ''}</span> คาบ (นับตาม{limitLabel})</span>
+                                                {totalTargetHours > 0 && (
+                                                    <span className="inline-flex items-center font-bold text-amber-700 dark:text-amber-300 bg-amber-100/90 dark:bg-amber-900/40 px-2 py-0.5 rounded-full text-[10px]">
+                                                        (ต้องเช็คอีก {totalTargetHours} คาบ)
+                                                    </span>
+                                                )}
+                                                {hoursPerWeek > 0 && <span className="opacity-70 font-bold">| {hoursPerWeek} คาบต่อสัปดาห์</span>}
                                             </p>
                                         </div>
                                     </div>
@@ -2747,7 +2934,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                     <div className="p-2 bg-gray-500/5 rounded-lg">
                                         <Search size={20} className="shrink-0 opacity-30" />
                                     </div>
-                                    <p className="text-[10px] font-medium italic">เลือกวิชาเพื่อดูสรุปสถิติจำนวนวัน</p>
+                                    <p className="text-[10px] font-medium italic">เลือกวิชาเพื่อดูสรุปสถิติจำนวนคาบ</p>
                                 </div>
                             );
                         })()}
@@ -2780,7 +2967,11 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                     isClearable
                                     placeholder="เลือกชั้น..."
                                     value={classOptions.find(opt => opt.value === selectedClass || opt.label === selectedClass)}
-                                    onChange={(val) => setSelectedClass(val ? val.value : '')}
+                                    onChange={(val) => {
+                                        setSelectedClass(val ? val.value : '');
+                                        setSelectedRoomNumber('');
+                                        setSelectedCourse('');
+                                    }}
                                     styles={selectStyles}
                                     menuPortalTarget={document.body}
                                     menuPosition="fixed"
@@ -2795,7 +2986,10 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                     isClearable
                                     placeholder="เลือกห้อง..."
                                     value={roomOptions.find(opt => opt.value === selectedRoomNumber)}
-                                    onChange={(val) => setSelectedRoomNumber(val ? val.value : '')}
+                                    onChange={(val) => {
+                                        setSelectedRoomNumber(val ? val.value : '');
+                                        setSelectedCourse('');
+                                    }}
                                     styles={selectStyles}
                                     menuPortalTarget={document.body}
                                     menuPosition="fixed"
@@ -2843,6 +3037,13 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                         >
                                             <div className="flex items-center justify-center gap-1.5 min-w-0 w-full">
                                                 <span className="font-black text-sm text-gray-800 dark:text-gray-100 truncate">{months[selectedMonth]}</span>
+                                                {selectedCourse && monthAttendanceStatus[selectedMonth]?.hasScheduled && (
+                                                    monthAttendanceStatus[selectedMonth].isComplete ? (
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="เดือนนี้เช็คครบแล้ว" />
+                                                    ) : (
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0 animate-pulse" title="เดือนนี้ยังเช็คไม่ครบ" />
+                                                    )
+                                                )}
                                                 <ChevronDown size={12} className={`text-gray-400 transition-transform duration-300 shrink-0 ${isMonthPickerOpen ? 'rotate-180' : ''}`} />
                                             </div>
                                             <span className="text-[9px] uppercase font-black text-indigo-500 tracking-wider leading-none">ปี พ.ศ. {calculatedYearAD + 543}</span>
@@ -2864,6 +3065,28 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                         {months.map((month, idx) => {
                                             const isSelected = selectedMonth === idx;
                                             const isMonthInTerm = allowedMonths.includes(idx);
+                                            const status = monthAttendanceStatus[idx];
+                                            const isIncomplete = isMonthInTerm && selectedCourse && status && !status.isComplete && status.hasScheduled;
+                                            const isComplete = isMonthInTerm && selectedCourse && status && status.isComplete && status.hasScheduled;
+
+                                            let btnClasses = '';
+                                            if (!isMonthInTerm) {
+                                                btnClasses = 'text-gray-300 dark:text-gray-700 cursor-not-allowed bg-gray-50 dark:bg-gray-900/40';
+                                            } else if (isSelected) {
+                                                if (isIncomplete) {
+                                                    btnClasses = 'bg-rose-600 text-white shadow-lg shadow-rose-200 dark:shadow-none ring-2 ring-rose-400';
+                                                } else if (isComplete) {
+                                                    btnClasses = 'bg-emerald-600 text-white shadow-lg shadow-emerald-200 dark:shadow-none ring-2 ring-emerald-400';
+                                                } else {
+                                                    btnClasses = 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 dark:shadow-none';
+                                                }
+                                            } else if (isIncomplete) {
+                                                btnClasses = 'bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/50';
+                                            } else if (isComplete) {
+                                                btnClasses = 'bg-emerald-50/70 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/40 hover:bg-emerald-100';
+                                            } else {
+                                                btnClasses = 'bg-indigo-50/50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/40';
+                                            }
 
                                             return (
                                                 <button
@@ -2875,24 +3098,68 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                                     }}
                                                     disabled={!isMonthInTerm}
                                                     className={`
-                                                        py-3 rounded-xl text-sm font-semibold transition-all relative
-                                                        ${isSelected
-                                                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 dark:shadow-none'
-                                                            : isMonthInTerm
-                                                                ? 'bg-indigo-50/50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/40'
-                                                                : 'text-gray-300 dark:text-gray-700 cursor-not-allowed bg-gray-50 dark:bg-gray-900/40'}
+                                                        py-2 px-1 rounded-xl text-sm font-semibold transition-all relative flex flex-col items-center justify-center min-h-[50px]
+                                                        ${btnClasses}
                                                     `}
-                                                    title={isMonthInTerm ? month : 'เดือนนี้อยู่นอกภาคเรียนที่เลือก'}
+                                                    title={
+                                                        !isMonthInTerm
+                                                            ? 'เดือนนี้อยู่นอกภาคเรียนที่เลือก'
+                                                            : isIncomplete
+                                                                ? `${month} (ยังเช็คไม่ครบ ขาดอีก ${status.missingPeriods} คาบ: บันทึกแล้ว ${status.recordedPeriods}/${status.scheduledPeriods})`
+                                                                : isComplete
+                                                                    ? `${month} (เช็คครบแล้ว: ${status.recordedPeriods}/${status.scheduledPeriods} คาบ)`
+                                                                    : month
+                                                    }
                                                 >
-                                                    {month.substring(0, 3)}
-                                                    {/* Term Indicator Dot */}
+                                                    <span className="leading-tight">{month.substring(0, 3)}</span>
+
+                                                    {/* Count indicator */}
+                                                    {isMonthInTerm && selectedCourse && status && status.hasScheduled && (
+                                                        <span className={`text-[10px] font-bold tracking-tight leading-none mt-1 ${
+                                                            isSelected
+                                                                ? 'text-white/90'
+                                                                : isIncomplete
+                                                                    ? 'text-rose-600 dark:text-rose-400 font-extrabold'
+                                                                    : isComplete
+                                                                        ? 'text-emerald-600 dark:text-emerald-400'
+                                                                        : 'text-indigo-500'
+                                                        }`}>
+                                                            {status.recordedPeriods}/{status.scheduledPeriods}
+                                                        </span>
+                                                    )}
+
+                                                    {/* Status Indicator Dot */}
                                                     {isMonthInTerm && (
-                                                        <div className="absolute top-1 right-1 w-1 h-1 rounded-full bg-indigo-500" />
+                                                        <div
+                                                            className={`absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full ${
+                                                                isSelected
+                                                                    ? 'bg-white'
+                                                                    : isIncomplete
+                                                                        ? 'bg-rose-500 ring-1 ring-white dark:ring-[#1a1b1e] animate-pulse'
+                                                                        : isComplete
+                                                                            ? 'bg-emerald-500'
+                                                                            : 'bg-indigo-500'
+                                                            }`}
+                                                        />
                                                     )}
                                                 </button>
                                             );
                                         })}
                                     </div>
+
+                                    {/* Legend footer */}
+                                    {selectedCourse && (
+                                        <div className="mt-3 pt-2.5 border-t border-gray-100 dark:border-gray-800/80 flex items-center justify-between text-[10px] font-medium text-gray-500 dark:text-gray-400 px-1">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                                                <span>เช็คครบแล้ว</span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0 animate-pulse" />
+                                                <span className="text-rose-600 dark:text-rose-400 font-semibold">ยังเช็คไม่ครบ (สีแดง)</span>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                                 </div>
@@ -2900,12 +3167,12 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
                             <button
                                 onClick={handleFetchData}
-                                disabled={loading || !selectedCourse}
+                                disabled={loading || !selectedClass || !selectedRoomNumber || !selectedCourse}
                                 className={`
                                     h-[46px] w-full sm:col-span-2 xl:col-span-1 rounded-xl font-bold text-white shadow-md transition-all flex items-center justify-center self-end
-                                    ${loading ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95 shadow-indigo-500/20'}
+                                    ${(loading || !selectedClass || !selectedRoomNumber || !selectedCourse) ? 'bg-indigo-400/50 cursor-not-allowed text-white/70' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95 shadow-indigo-500/20'}
                                 `}
-                                title="รีเฟรชข้อมูล"
+                                title={!selectedRoomNumber ? 'กรุณาเลือกห้องเรียนก่อน' : 'รีเฟรชข้อมูล'}
                             >
                                 {loading ? <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-b-white"></div> : <Search size={20} />}
                             </button>
@@ -3070,10 +3337,22 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                                     </div>
 
                                                     {isTeachingDate && (
-                                                        <div
-                                                            className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-emerald-400 ring-1 ring-white dark:ring-gray-900 shadow-sm"
-                                                            title="วันที่สอน"
-                                                        />
+                                                        checkProgress.checked >= checkProgress.total && checkProgress.total > 0 ? (
+                                                            <div
+                                                                className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-emerald-400 ring-1 ring-white dark:ring-gray-900 shadow-sm"
+                                                                title={`เช็คชื่อครบแล้ว (${checkProgress.checked}/${checkProgress.total} คน)`}
+                                                            />
+                                                        ) : checkProgress.checked > 0 ? (
+                                                            <div
+                                                                className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-amber-400 ring-1 ring-white dark:ring-gray-900 shadow-sm animate-pulse"
+                                                                title={`เช็คชื่อยังไม่ครบ (${checkProgress.checked}/${checkProgress.total} คน)`}
+                                                            />
+                                                        ) : (
+                                                            <div
+                                                                className="absolute top-1 right-1 h-2 w-2 rounded-full bg-rose-500 ring-1 ring-white dark:ring-gray-900 shadow-sm animate-pulse"
+                                                                title="ยังไม่ได้เช็คชื่อ (คลิกเพื่อเช็คชื่อ)"
+                                                            />
+                                                        )
                                                     )}
 
                                                     {isCheckable && (
@@ -3111,7 +3390,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
                                     {students.length === 0 ? (
                                         <tr>
-                                            <td colSpan={dates.length + 8} className="p-20 text-center text-gray-400">
+                                            <td colSpan={dates.length + 8} className="p-16 text-center text-gray-400">
                                                 {loading ? (
                                                     <div className="flex flex-col items-center gap-2 w-full max-w-md mx-auto">
                                                         {[...Array(6)].map((_, i) => (

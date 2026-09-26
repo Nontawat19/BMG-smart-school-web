@@ -2,6 +2,7 @@ import React from 'react';
 import { Document, Page, Text, View, StyleSheet, Font, Image } from '@react-pdf/renderer';
 import { getEffectivePeriodEnd, getScheduleSlotCandidates, getTimetableDisplayPeriods } from '@/utils/scheduleDisplayUtils';
 import { getGroupPersonnel } from '@/utils/schoolUtils';
+import { specialPeriodMatchesDay } from '@/utils/specialPeriodDay';
 
 /* ===================== TYPES ===================== */
 export interface Teacher {
@@ -80,7 +81,7 @@ export type Schedule = Record<string, ScheduleEntry | null>;
 const normalizeScheduleTime = (value?: string) => String(value || '').trim().replace('.', ':');
 
 const matchesSpecialPeriod = (sp: SpecialPeriod, day: string, periodSetting: PeriodSetting) => {
-    const dayMatches = !sp.day || sp.day === 'all' || sp.day === day;
+    const dayMatches = specialPeriodMatchesDay(sp.day, day);
     if (!dayMatches) return false;
     if (sp.linkedPeriodId && sp.linkedPeriodId !== 'custom') {
         return sp.linkedPeriodId === periodSetting.id;
@@ -400,7 +401,7 @@ export const generateCourseSummary = (
             if (sp.linkedPeriodId && periodSettings.length > 0) {
                 // Linked to a period slot: one count per matching weekday
                 weekdays.forEach(day => {
-                    if ((!sp.day || sp.day === day || sp.day === 'all') &&
+                    if (specialPeriodMatchesDay(sp.day, day) &&
                         periodSettings.some(p => p.id === sp.linkedPeriodId)) {
                         specialLoadMap[sp.title] = (specialLoadMap[sp.title] || 0) + 1;
                     }

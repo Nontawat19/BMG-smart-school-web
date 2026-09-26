@@ -5,6 +5,7 @@ import { firestore as db } from '@/firebase';
 import { classMatchesSelection, normalizePeriodSettings, getScheduleSlotCandidates } from '@/utils/scheduleDisplayUtils';
 import { getScheduleDocId, matchesScheduleTerm, resolveScheduleTeacherId } from '../AcademicDepartment/schedule/scheduleSharedUtils';
 import { Loader2, Calendar, Maximize2, X } from 'lucide-react';
+import { specialPeriodMatchesDay } from '@/utils/specialPeriodDay';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -272,7 +273,7 @@ const StudentScheduleEmbed: React.FC<Props> = ({
   const getSpecialForSlot = (dayKey: string, periodId: string, startTime: string, endTime: string): SpecialPeriod | undefined => {
     return specialPeriods.find(sp => {
       if (sp.periodType === 'oneTime') return false;
-      const dayMatch = !sp.day || sp.day === 'all' || sp.day === dayKey;
+      const dayMatch = specialPeriodMatchesDay(sp.day, dayKey);
       if (!dayMatch) return false;
       if (sp.linkedPeriodId && sp.linkedPeriodId === periodId) return true;
       const spStart = sp.startTime?.replace('.', ':');

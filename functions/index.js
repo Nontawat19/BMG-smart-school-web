@@ -1460,3 +1460,23 @@ exports.getConsentAuditStats = functions.region("us-central1").https.onCall(asyn
     };
 });
 
+exports.createWebViewSessionToken = functions.region("us-central1").https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError(
+            "unauthenticated",
+            "ต้องเข้าสู่ระบบก่อนจึงจะขอ session token ได้"
+        );
+    }
+
+    try {
+        const token = await admin.auth().createCustomToken(context.auth.uid);
+        return { token };
+    } catch (error) {
+        console.error(`สร้าง session token ไม่สำเร็จสำหรับ uid ${context.auth.uid}:`, error);
+        throw new functions.https.HttpsError(
+            "internal",
+            `ไม่สามารถสร้าง session token ได้: ${error.message}`
+        );
+    }
+});
+

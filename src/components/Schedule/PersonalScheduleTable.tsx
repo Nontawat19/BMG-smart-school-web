@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { UserCheck, History, Calendar, ArrowRight, X } from 'lucide-react';
 import { getEffectivePeriodEnd, getScheduleSlotCandidates, getTimetableDisplayPeriods, NormalizedPeriod, PeriodLike } from '@/utils/scheduleDisplayUtils';
 import { getAttendanceRouteForScheduleCell, getAttendanceHistoryRouteForScheduleCell } from '@/utils/scheduleAttendanceUtils';
+import { specialPeriodMatchesDay } from '@/utils/specialPeriodDay';
 
 interface ScheduleCourseEntry {
   id?: string;
@@ -134,7 +135,7 @@ const getCourseColors = (code: string) => {
 
 const getSpecialPeriod = (specialPeriods: SpecialPeriodLike[], dayKey: string, period: NormalizedPeriod) => {
   return specialPeriods.find(sp => {
-    const dayMatches = !sp.day || sp.day === dayKey || sp.day === 'all';
+    const dayMatches = specialPeriodMatchesDay(sp.day, dayKey);
     const linkedMatches = sp.linkedPeriodId === period.id || (!String(period.id).startsWith('period') && sp.id === period.id);
     const timeMatches = sp.startTime === period.startTime && sp.endTime === period.endTime;
     return dayMatches && (linkedMatches || timeMatches);

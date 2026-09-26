@@ -23,6 +23,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import SkeletonLoader from "@/components/SkeletonLoader";
+import { specialPeriodMatchesDay } from '@/utils/specialPeriodDay';
 
 interface Club {
   id: string;
@@ -400,7 +401,7 @@ const ClubAttendancePage: React.FC = () => {
   }, [currentDate, currentDateEvent]);
 
   const isCompensationScheduleDay = currentDateEvent?.type === 'schoolDay' && Boolean(currentDateEvent.scheduleDay);
-  const isClubDay = clubSpecialPeriod ? (!clubSpecialPeriod.day || clubSpecialPeriod.day === 'all' || clubSpecialPeriod.day === effectiveDayKey) : false;
+  const isClubDay = clubSpecialPeriod ? specialPeriodMatchesDay(clubSpecialPeriod.day, effectiveDayKey) : false;
   const attendanceSummary = useMemo(() => {
     return students.reduce((acc, student) => {
       const status = attendance[student.id] || 'present';

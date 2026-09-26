@@ -36,6 +36,7 @@ import {
     fetchFlaggedStudents, isRemediationWindowOpen,
 } from '@/utils/remediationUtils';
 import { AlertTriangle as LucideAlertTriangle, Clock, CheckCircle2, XCircle, RefreshCw, Send, ClipboardList, AlertCircle } from 'lucide-react';
+import { specialPeriodMatchesDay } from '@/utils/specialPeriodDay';
 
 // 1. สร้าง Interface สำหรับข้อมูลโปรไฟล์
 interface TeacherProfile {
@@ -1375,7 +1376,7 @@ const ProfilePage: React.FC = () => {
           const special = scheduleSpecialPeriods.find(sp => 
             sp.isTeachingLoad && 
             (sp.linkedPeriodId === p.id || (!p.id.startsWith('period') && sp.id === p.id)) && 
-            (!sp.day || sp.day === day || sp.day === 'all')
+            specialPeriodMatchesDay(sp.day, day)
           );
           
           if (special) {

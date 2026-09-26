@@ -20,6 +20,7 @@ import { CLASSES, CLASS_FULL_NAMES } from '@/utils/schoolUtils';
 import { getActiveSortedTeachers } from '@/utils/teacherSortUtils';
 import { normalizePeriodSettings } from '@/utils/scheduleDisplayUtils';
 import { getScheduleDocId, matchesScheduleTerm, resolveScheduleTeacherId } from './schedule/scheduleSharedUtils';
+import { specialPeriodMatchesDay } from '@/utils/specialPeriodDay';
 
 // Types imported from @/components/pdf/TeacherScheduleDocument
 
@@ -519,7 +520,7 @@ const TeacherScheduleViewPage: React.FC = () => {
         teacherSpecialPeriods.forEach(sp => {
           if (sp.linkedPeriodId && periodSettings.length > 0) {
             weekdays.forEach(day => {
-              if ((!sp.day || sp.day === day || sp.day === 'all') &&
+              if (specialPeriodMatchesDay(sp.day, day) &&
                   periodSettings.some(p => p.id === sp.linkedPeriodId)) {
                 specialPeriodsCount++;
               }

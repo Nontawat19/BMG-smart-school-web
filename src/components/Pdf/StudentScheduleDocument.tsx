@@ -1,6 +1,7 @@
 import React from 'react';
 import { Page, Text, View, Document, StyleSheet, Font, Image } from '@react-pdf/renderer';
 import { getEffectivePeriodEnd, getScheduleSlotCandidates, getTimetableDisplayPeriods } from '@/utils/scheduleDisplayUtils';
+import { specialPeriodMatchesDay } from '@/utils/specialPeriodDay';
 
 // Register Thai Font (Sarabun)
 // Register Thai Font (Sarabun)
@@ -240,8 +241,8 @@ const StudentSchedulePageContent = ({
                         const getSpecialPeriod = (day: string, periodSetting: PeriodSetting) => {
                             const { id, startTime, endTime } = periodSetting;
                             return specialPeriods.find(sp =>
-                                (sp.linkedPeriodId === id && (!sp.day || sp.day === 'all' || sp.day === day)) ||
-                                (sp.startTime === startTime && sp.endTime === endTime && (!sp.day || sp.day === 'all' || sp.day === day))
+                                (sp.linkedPeriodId === id && specialPeriodMatchesDay(sp.day, day)) ||
+                                (sp.startTime === startTime && sp.endTime === endTime && specialPeriodMatchesDay(sp.day, day))
                             );
                         };
                         const special = getSpecialPeriod(dayKey, period);

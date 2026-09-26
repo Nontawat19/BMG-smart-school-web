@@ -24,6 +24,7 @@ import {
 } from '@/utils/learnerActivityUtils';
 import { computeWeeklyActivityEligibilityForRoster, applyActivityEligibilityFailFlags } from '@/utils/activityAttendanceEligibility';
 import { isActivityCourse } from './schedule/utils';
+import { specialPeriodMatchesDay } from '@/utils/specialPeriodDay';
 
 interface LearnerActivity {
   id: string;
@@ -873,7 +874,7 @@ const getDayKey = (date: Date) => {
 };
 
 const isPeriodAvailableOnDay = (period: SpecialPeriod, dayKey: string) => {
-  return !period.day || period.day === 'all' || period.day === dayKey;
+  return specialPeriodMatchesDay(period.day, dayKey);
 };
 
 const formatSpecialPeriodDay = (day?: string) => {

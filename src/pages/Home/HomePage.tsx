@@ -26,6 +26,7 @@ import { isArchivedStudentStatus, normalizeStudentStatus } from "@/utils/student
 import { fetchSchoolDashboardSummary } from "@/utils/ownerStatsUtils";
 import { useSchoolScope } from "@/hooks/useEffectiveSchool";
 import TeacherDailyQuickTabs from "./components/TeacherDailyQuickTabs";
+import { specialPeriodMatchesDay } from '@/utils/specialPeriodDay';
 
 interface CalendarEvent { type?: string; description?: string; scheduleDay?: string; }
 interface NewsItem { id: string; title?: string; content?: string; imageUrl?: string; linkUrl?: string; linkText?: string; isActive?: boolean; createdAt?: any; viewCount?: number; }
@@ -75,7 +76,7 @@ const normalizeTeachingPeriod = (period: unknown) => {
 };
 
 const isSpecialPeriodForDay = (period: any, dayKey: string) => {
-    return !period?.day || period.day === 'all' || period.day === dayKey;
+    return specialPeriodMatchesDay(period?.day, dayKey);
 };
 
 const includesAnyKeyword = (value: string, keywords: string[]) => {

@@ -15,6 +15,7 @@ import { appendGroupRoom, isAcademicCourse, getPartnerIndexForPeriods, getRequir
 import { getCurrentThaiYear } from '@/utils/dateUtils';
 import { getEffectivePeriodEnd, getTimetableDisplayPeriods, normalizePeriodSettings } from '@/utils/scheduleDisplayUtils';
 import { normalizeSubjectGroupValue } from '@/utils/subjectGroupUtils';
+import { specialPeriodMatchesDay } from '@/utils/specialPeriodDay';
 
 interface TeacherAssignment {
     groupNumber: number;
@@ -1625,7 +1626,7 @@ const PeriodConstraintPage: React.FC = () => {
                 // Special periods that match a teaching period's time slot get overlaid
                 const getSpecialForDayAndPeriod = (dayKey: string, periodId: string) => {
                     return specialPeriods.find(sp => {
-                        const matchDay = !sp.day || sp.day === 'all' || sp.day === dayKey;
+                        const matchDay = specialPeriodMatchesDay(sp.day, dayKey);
                         const matchPeriod = sp.linkedPeriodId === periodId;
                         return matchDay && matchPeriod;
                     });
